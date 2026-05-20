@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   description: " ERP Suite for Jewelry Management",
 };
 
+import { ConvexClientProvider } from "@/components/ConvexClientProvider";
+
+import { Toaster } from "sonner";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,7 +37,12 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ConvexClientProvider>
+          {children}
+          <Toaster position="top-center" richColors />
+        </ConvexClientProvider>
+      </body>
     </html>
   );
 }

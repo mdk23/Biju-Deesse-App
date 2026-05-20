@@ -19,7 +19,11 @@ import {
   X,
   Image as ImageIcon,
   History,
-  ShieldCheck
+  ShieldCheck,
+  Camera,
+  Check,
+  Tag,
+  Gem
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -58,94 +62,11 @@ interface InventoryProduct {
   lastMovement: string;
 }
 
-// --- Mock Data ---
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { toast } from 'sonner';
 
-const MOCK_INVENTORY: InventoryProduct[] = [
-  {
-    id: 'PRD-001',
-    name: 'Solitaire Eternity Ring',
-    category: 'Rings',
-    brand: 'Celestial Aura',
-    goldPurity: '18K Rose Gold',
-    costPrice: 8500,
-    sellingPrice: 12400,
-    quantity: { current: 12, reserved: 2, damaged: 0, available: 10 },
-    status: 'In Stock',
-    photos: ['https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2023-01-15',
-    lastMovement: '2023-10-12'
-  },
-  {
-    id: 'PRD-002',
-    name: 'Cuban Link Bracelet',
-    category: 'Bracelets',
-    brand: 'Timeless Gold',
-    goldPurity: '18K Yellow Gold',
-    costPrice: 3200,
-    sellingPrice: 4950,
-    quantity: { current: 3, reserved: 1, damaged: 0, available: 2 },
-    status: 'Low Stock',
-    photos: ['https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2023-02-20',
-    lastMovement: '2023-10-11'
-  },
-  {
-    id: 'PRD-003',
-    name: 'Arctic Frost Necklace',
-    category: 'Necklaces',
-    brand: 'Arctic Frost',
-    goldPurity: 'Platinum',
-    costPrice: 15000,
-    sellingPrice: 24100,
-    quantity: { current: 5, reserved: 0, damaged: 0, available: 5 },
-    status: 'In Stock',
-    photos: ['https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2023-03-10',
-    lastMovement: '2023-10-10'
-  },
-  {
-    id: 'PRD-004',
-    name: 'Vintage Chronograph',
-    category: 'Watches',
-    brand: 'Horology Heritage',
-    goldPurity: 'Stainless Steel',
-    costPrice: 12000,
-    sellingPrice: 18500,
-    quantity: { current: 2, reserved: 1, damaged: 1, available: 0 },
-    status: 'Out of Stock',
-    photos: ['https://images.unsplash.com/photo-1524592091214-8c97afad3d3a?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2022-11-05',
-    lastMovement: '2023-09-28'
-  },
-  {
-    id: 'PRD-005',
-    name: 'Diamond Drop Earrings',
-    category: 'Earrings',
-    brand: 'Celestial Aura',
-    goldPurity: '14K White Gold',
-    costPrice: 4500,
-    sellingPrice: 7200,
-    quantity: { current: 15, reserved: 3, damaged: 0, available: 12 },
-    status: 'In Stock',
-    photos: ['https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2023-05-22',
-    lastMovement: '2023-10-05'
-  },
-  {
-    id: 'PRD-006',
-    name: 'Emerald Heritage Ring',
-    category: 'Rings',
-    brand: 'Horology Heritage',
-    goldPurity: '18K Yellow Gold',
-    costPrice: 9200,
-    sellingPrice: 15800,
-    quantity: { current: 1, reserved: 0, damaged: 0, available: 1 },
-    status: 'Dead Stock',
-    photos: ['https://images.unsplash.com/photo-1603561591411-0e7045c97e4a?auto=format&fit=crop&q=80&w=400'],
-    addedDate: '2022-06-12',
-    lastMovement: '2022-12-15'
-  }
-];
+// No static MOCK_INVENTORY here anymore
 
 // --- Sub-components ---
 
@@ -193,28 +114,43 @@ const InventoryActions = () => (
 // --- Main Component ---
 
 export default function Inventory() {
-  const [selectedProduct, setSelectedProduct] = useState<InventoryProduct | null>(null);
+  const products = useQuery(api.products.list, { archived: false }) || [];
+  const upsertProduct = useMutation(api.products.upsert);
+  const deleteProduct = useMutation(api.products.remove);
+
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
 
-  // Calculations
-  const stats = useMemo(() => {
-    const totalValue = MOCK_INVENTORY.reduce((acc, curr) => acc + (curr.costPrice * curr.quantity.current), 0);
-    const lowStock = MOCK_INVENTORY.filter(p => p.status === 'Low Stock').length;
-    const outOfStock = MOCK_INVENTORY.filter(p => p.status === 'Out of Stock').length;
-    const deadStock = MOCK_INVENTORY.filter(p => p.status === 'Dead Stock').length;
-    const fastMoving = 3; // Mock value
+  // Form State
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    category: 'Rings',
+    costPrice: 0,
+    sellingPrice: 0,
+    stock: 0,
+    reorderLevel: 5,
+    archived: false,
+    description: '',
+  });
 
-    return { totalValue, lowStock, outOfStock, deadStock, fastMoving };
-  }, []);
+  const estimatedMargin = useMemo(() => {
+    if (formData.sellingPrice <= 0) return 0;
+    return ((formData.sellingPrice - formData.costPrice) / formData.sellingPrice) * 100;
+  }, [formData.costPrice, formData.sellingPrice]);
+
+  const analytics = useQuery(api.products.getInventoryAnalytics);
 
   const categoryDistribution = useMemo(() => {
     const counts: Record<string, number> = {};
-    MOCK_INVENTORY.forEach(p => {
+    products.forEach(p => {
       counts[p.category] = (counts[p.category] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, []);
+  }, [products]);
 
   const agingData = [
     { name: '0-30 Days', value: 45 },
@@ -223,14 +159,82 @@ export default function Inventory() {
     { name: '90+ Days', value: 15 },
   ];
 
-  const filteredProducts = MOCK_INVENTORY.filter(p => {
+  const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         p.id.toLowerCase().includes(searchQuery.toLowerCase());
+                         p.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
   const COLORS = ['#8a4853', '#735c00', '#6e5371', '#d7c1c3', '#857374'];
+
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setFormData({
+      code: '',
+      name: '',
+      category: 'Rings',
+      costPrice: 0,
+      sellingPrice: 0,
+      stock: 0,
+      reorderLevel: 5,
+      archived: false,
+      description: '',
+    });
+    setIsAddingProduct(true);
+  };
+
+  const handleOpenEdit = (product: any) => {
+    setEditingId(product._id);
+    setFormData({
+      code: product.code,
+      name: product.name,
+      category: product.category,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      stock: product.stock,
+      reorderLevel: product.reorderLevel,
+      archived: product.archived,
+      description: product.description || '',
+    });
+    setIsAddingProduct(true);
+    setSelectedProduct(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await upsertProduct({
+        id: (editingId ?? undefined) as any,
+        ...formData,
+      });
+      setIsAddingProduct(false);
+      setEditingId(null);
+      toast.success(editingId ? "Inventory piece updated" : "New piece registered in the vault");
+    } catch (error) {
+      toast.error("Failed to save inventory piece");
+      console.error(error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    toast.warning("Confirm Deletion", {
+      description: "Are you sure you want to remove this piece? This action is permanent.",
+      action: {
+        label: "Remove Permanent",
+        onClick: async () => {
+          try {
+            await deleteProduct({ id: id as any });
+            setSelectedProduct(null);
+            toast.success("Piece purged from inventory vault");
+          } catch (error) {
+            toast.error("Failed to delete piece");
+            console.error(error);
+          }
+        },
+      },
+    });
+  };
 
   return (
     <div className="max-w-[1600px] mx-auto">
@@ -242,15 +246,23 @@ export default function Inventory() {
             Global stock management, procurement, and real-time jewelry analytics.
           </p>
         </div>
-        <div className="flex items-center gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl border border-white/60">
-          <div className="flex flex-col px-4 border-r border-outline-variant/30">
-            <span className="font-label-caps text-[9px] text-outline">STOCK ACCURACY</span>
-            <span className="font-data-tabular text-sm text-primary font-bold">99.8%</span>
+        <div className="flex items-center gap-4 w-full md:w-auto">
+          <div className="hidden lg:flex items-center gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl border border-white/60 shadow-sm">
+            <div className="flex flex-col px-4 border-r border-outline-variant/30">
+              <span className="font-label-caps text-[9px] text-outline">STOCK ACCURACY</span>
+              <span className="font-data-tabular text-sm text-primary font-bold">99.8%</span>
+            </div>
+            <div className="flex flex-col px-4">
+              <span className="font-label-caps text-[9px] text-outline">LAST SYNC</span>
+              <span className="font-data-tabular text-sm text-on-surface-variant">2 mins ago</span>
+            </div>
           </div>
-          <div className="flex flex-col px-4">
-            <span className="font-label-caps text-[9px] text-outline">LAST SYNC</span>
-            <span className="font-data-tabular text-sm text-on-surface-variant">2 mins ago</span>
-          </div>
+          <button 
+            onClick={() => setIsAddingProduct(true)}
+            className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          >
+            <Plus size={18} /> NEW ACQUISITION
+          </button>
         </div>
       </div>
 
@@ -258,37 +270,37 @@ export default function Inventory() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
         <StatCard 
           title="TOTAL STOCK VALUE" 
-          value={`${(stats.totalValue).toLocaleString()} Mt`} 
-          subValue="Across 342 active pieces"
+          value={analytics ? `${analytics.totalStockValue.toLocaleString()} Mt` : "..."} 
+          subValue={`Valuation of ${products.length} active pieces`}
           icon={DollarSign}
-          trend={4.2}
+          trend={analytics?.valuationTrend}
           color="primary"
         />
         <StatCard 
           title="LOW STOCK ITEMS" 
-          value={stats.lowStock} 
+          value={analytics ? analytics.lowStockCount : "..."} 
           subValue="Requires immediate action"
           icon={AlertTriangle}
-          trend={-12}
+          trend={analytics?.lowStockTrend}
           color="secondary"
         />
         <StatCard 
           title="OUT OF STOCK" 
-          value={stats.outOfStock} 
+          value={analytics ? analytics.outOfStockCount : "..."} 
           subValue="Lost revenue potential"
           icon={Box}
           color="error"
         />
         <StatCard 
           title="DEAD STOCK" 
-          value={stats.deadStock} 
+          value={analytics ? analytics.deadStockCount : "..."} 
           subValue="Idle capital > 180 days"
           icon={Clock}
           color="outline"
         />
         <StatCard 
           title="FAST MOVING" 
-          value={stats.fastMoving} 
+          value={analytics ? analytics.fastMovingProducts.length : "..."} 
           subValue="Top performers this month"
           icon={TrendingUp}
           trend={18}
@@ -440,18 +452,18 @@ export default function Inventory() {
             <tbody className="divide-y divide-primary/5">
               {filteredProducts.map((product) => (
                 <tr 
-                  key={product.id} 
+                  key={product._id} 
                   className="hover:bg-white/50 transition-colors group cursor-pointer"
                   onClick={() => setSelectedProduct(product)}
                 >
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-lg overflow-hidden border border-white bg-surface-container shadow-sm">
-                        <img src={product.photos[0]} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                       </div>
                       <div>
                         <p className="font-body-md text-sm font-bold text-on-surface">{product.name}</p>
-                        <p className="font-data-tabular text-[10px] text-outline">{product.id}</p>
+                        <p className="font-data-tabular text-[10px] text-outline">{product.code}</p>
                       </div>
                     </div>
                   </td>
@@ -468,24 +480,34 @@ export default function Inventory() {
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
-                      <span className="font-data-tabular text-sm">{product.quantity.current} units</span>
-                      <span className="font-label-caps text-[9px] text-secondary">{product.quantity.available} available</span>
+                      <span className="font-data-tabular text-sm">{product.stock} units</span>
+                      <span className="font-label-caps text-[9px] text-secondary">{product.stock} available</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      product.status === 'In Stock' ? 'bg-secondary-container/20 text-secondary' :
-                      product.status === 'Low Stock' ? 'bg-primary-fixed/30 text-primary' :
-                      product.status === 'Out of Stock' ? 'bg-error-container/30 text-error' :
-                      'bg-outline/10 text-outline'
+                      product.stock > product.reorderLevel ? 'bg-secondary-container/20 text-secondary' :
+                      product.stock > 0 ? 'bg-primary-fixed/30 text-primary' :
+                      'bg-error-container/30 text-error'
                     }`}>
-                      {product.status}
+                      {product.stock > product.reorderLevel ? 'In Stock' : (product.stock > 0 ? 'Low Stock' : 'Out of Stock')}
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <button className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors">
-                      <MoreVertical size={16} />
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleOpenEdit(product); }}
+                        className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
+                      >
+                        <History size={16} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setSelectedProduct(product); }}
+                        className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -493,7 +515,7 @@ export default function Inventory() {
           </table>
         </div>
         <div className="px-8 py-4 bg-primary/5 flex justify-between items-center border-t border-primary/10">
-          <p className="font-label-caps text-[10px] text-outline">Showing {filteredProducts.length} of {MOCK_INVENTORY.length} pieces</p>
+          <p className="font-label-caps text-[10px] text-outline">Showing {filteredProducts.length} of {products.length} pieces</p>
           <div className="flex gap-2">
             <button className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all">PREVIOUS</button>
             <button className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all">NEXT</button>
@@ -523,11 +545,11 @@ export default function Inventory() {
               <div className="sticky top-0 z-10 bg-surface-container/80 backdrop-blur-md p-8 flex justify-between items-start border-b border-outline-variant/30">
                 <div className="flex items-center gap-6">
                   <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white shadow-xl">
-                    <img src={selectedProduct.photos[0]} alt="" className="w-full h-full object-cover" />
+                    <img src={selectedProduct.imageUrl} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h2 className="font-headline-md text-2xl text-primary">{selectedProduct.name}</h2>
-                    <p className="font-label-caps text-xs text-outline">{selectedProduct.id} • {selectedProduct.category.toUpperCase()}</p>
+                    <p className="font-label-caps text-xs text-outline">{selectedProduct.code} • {selectedProduct.category.toUpperCase()}</p>
                     <div className="mt-2 flex gap-2">
                       <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">PREMIUM COLLECTION</span>
                       <span className="px-2 py-0.5 rounded-full bg-secondary-container/20 text-secondary text-[10px] font-bold">CERTIFIED</span>
@@ -609,19 +631,19 @@ export default function Inventory() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center">
                       <p className="font-label-caps text-[10px] text-outline mb-1">TOTAL</p>
-                      <p className="font-headline-md text-2xl text-on-surface">{selectedProduct.quantity.current}</p>
+                      <p className="font-headline-md text-2xl text-on-surface">{selectedProduct.stock}</p>
                     </div>
                     <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center">
-                      <p className="font-label-caps text-[10px] text-outline mb-1">AVAILABLE</p>
-                      <p className="font-headline-md text-2xl text-secondary">{selectedProduct.quantity.available}</p>
+                      <p className="font-label-caps text-[10px] text-outline mb-1">STATUS</p>
+                      <p className="font-headline-md text-sm text-secondary">{selectedProduct.stock > selectedProduct.reorderLevel ? 'STOCK OK' : 'LOW STOCK'}</p>
                     </div>
-                    <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center">
+                    <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center opacity-40">
                       <p className="font-label-caps text-[10px] text-outline mb-1">RESERVED</p>
-                      <p className="font-headline-md text-2xl text-primary">{selectedProduct.quantity.reserved}</p>
+                      <p className="font-headline-md text-2xl text-primary">0</p>
                     </div>
-                    <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center">
+                    <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center opacity-40">
                       <p className="font-label-caps text-[10px] text-outline mb-1">DAMAGED</p>
-                      <p className="font-headline-md text-2xl text-error">{selectedProduct.quantity.damaged}</p>
+                      <p className="font-headline-md text-2xl text-error">0</p>
                     </div>
                   </div>
                 </div>
@@ -632,7 +654,7 @@ export default function Inventory() {
                     <ImageIcon size={14} /> PRODUCT MEDIA
                   </h4>
                   <div className="grid grid-cols-3 gap-4">
-                    {selectedProduct.photos.map((photo, i) => (
+                    {[selectedProduct.imageUrl].filter(Boolean).map((photo: any, i: number) => (
                       <div key={i} className="aspect-square rounded-2xl overflow-hidden border border-white shadow-md hover:scale-[1.02] transition-all cursor-zoom-in">
                         <img src={photo} alt="" className="w-full h-full object-cover" />
                       </div>
@@ -669,13 +691,249 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex gap-4 pt-6 border-t border-outline-variant/30">
-                  <button className="flex-1 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all">
-                    EDIT PRODUCT
+                  <button 
+                    onClick={() => handleOpenEdit(selectedProduct)}
+                    className="flex-1 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+                  >
+                    <History size={16} /> Edit Piece Details
                   </button>
-                  <button className="flex-1 py-4 bg-white/60 border border-outline text-on-surface-variant rounded-2xl font-label-caps text-xs hover:bg-white transition-all">
-                    ARCHIVE SKU
+                  <button 
+                    onClick={() => handleDelete(selectedProduct._id)}
+                    className="flex-1 py-4 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all uppercase tracking-widest"
+                  >
+                    Permanent Removal
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Add Product Drawer */}
+      <AnimatePresence>
+        {isAddingProduct && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddingProduct(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-xl h-full bg-surface-container shadow-2xl overflow-y-auto border-l border-white/40 flex flex-col"
+            >
+              {/* Drawer Header */}
+              <div className="p-8 pb-12 bg-atelier-gradient relative">
+                <button 
+                  onClick={() => setIsAddingProduct(false)}
+                  className="absolute top-6 right-6 p-2 bg-white/40 backdrop-blur-md rounded-full text-primary hover:bg-white transition-all shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+                
+                <div className="flex flex-col items-center text-center mt-4">
+                  <div className="w-20 h-20 bg-white/40 backdrop-blur-md rounded-3xl border-2 border-white flex items-center justify-center text-primary shadow-xl mb-4 group cursor-pointer hover:bg-white transition-all">
+                    <Camera size={32} className="group-hover:scale-110 transition-transform" />
+                  </div>
+                  <h2 className="font-headline-md text-3xl text-primary uppercase tracking-tight">
+                    {editingId ? 'Update Piece Integrity' : 'New Piece Acquisition'}
+                  </h2>
+                  <p className="font-label-caps text-[10px] text-outline mt-2 tracking-[0.2em]">REGISTER TO THE ROYAL VAULT</p>
+                </div>
+              </div>
+
+              {/* Form Content */}
+              <form className="flex-1 p-8 space-y-10" onSubmit={handleSubmit}>
+                {/* Basic Identification */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-primary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-primary tracking-widest">PRODUCT IDENTITY</h4>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="col-span-2 space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">PIECE NAME</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Diamond Drop Earrings"
+                          value={formData.name}
+                          onChange={(e) => setFormData({...formData, name: e.target.value})}
+                          className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">PIECE CODE (SKU)</label>
+                        <input 
+                          type="text" 
+                          placeholder="VAULT-..."
+                          value={formData.code}
+                          onChange={(e) => setFormData({...formData, code: e.target.value})}
+                          className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-xs font-bold text-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">CATEGORY</label>
+                        <select 
+                          value={formData.category}
+                          onChange={(e) => setFormData({...formData, category: e.target.value})}
+                          className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-xs font-bold text-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm appearance-none"
+                        >
+                          <option value="Rings">RINGS</option>
+                          <option value="Necklaces">NECKLACES</option>
+                          <option value="Bracelets">BRACELETS</option>
+                          <option value="Watches">WATCHES</option>
+                          <option value="Earrings">EARRINGS</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">PIECE DESCRIPTION</label>
+                        <input 
+                          type="text" 
+                          placeholder="Brief stylistic details"
+                          value={formData.description}
+                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                          className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Jewelry Specs */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-secondary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-secondary tracking-widest">JEWELRY SPECIFICATIONS</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">GOLD PURITY / MATERIAL</label>
+                      <div className="relative">
+                        <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder="e.g. 18K Rose Gold"
+                          className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">GEMSTONE DETAILS</label>
+                      <div className="relative">
+                        <Gem className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder="e.g. VVS1 Diamond 0.5ct"
+                          className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Financials */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-tertiary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-tertiary tracking-widest">FINANCIAL VALUATION</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">COST PRICE (Mt)</label>
+                      <input 
+                        type="number" 
+                        placeholder="0.00"
+                        value={formData.costPrice}
+                        onChange={(e) => setFormData({...formData, costPrice: parseFloat(e.target.value) || 0})}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">SELLING PRICE (Mt)</label>
+                      <input 
+                        type="number" 
+                        placeholder="0.00"
+                        value={formData.sellingPrice}
+                        onChange={(e) => setFormData({...formData, sellingPrice: parseFloat(e.target.value) || 0})}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4 p-4 bg-secondary/5 rounded-2xl border border-secondary/10 flex justify-between items-center">
+                    <span className="font-label-caps text-[10px] text-secondary font-bold">ESTIMATED MARGIN</span>
+                    <span className="font-data-tabular text-sm font-bold text-secondary">
+                      {estimatedMargin.toFixed(1)}%
+                    </span>
+                  </div>
+                </section>
+
+                {/* Stock Control */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-outline rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-outline tracking-widest">INITIAL STOCK CONTROL</h4>
+                  </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">TOTAL STOCK</label>
+                      <input 
+                        type="number" 
+                        value={formData.stock}
+                        onChange={(e) => setFormData({...formData, stock: parseInt(e.target.value) || 0})}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">REORDER LEVEL</label>
+                      <input 
+                        type="number" 
+                        value={formData.reorderLevel}
+                        onChange={(e) => setFormData({...formData, reorderLevel: parseInt(e.target.value) || 0})}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                    <div className="flex flex-col justify-center items-center">
+                      <label className="font-label-caps text-[9px] text-outline mb-2">ARCHIVED</label>
+                      <button 
+                        type="button"
+                        onClick={() => setFormData({...formData, archived: !formData.archived})}
+                        className={`w-12 h-6 rounded-full transition-colors relative ${formData.archived ? 'bg-error' : 'bg-outline-variant'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.archived ? 'left-7' : 'left-1'}`}></div>
+                      </button>
+                    </div>
+                </section>
+              </form>
+
+              {/* Drawer Footer Actions */}
+              <div className="p-8 border-t border-outline-variant/30 bg-white/20 sticky bottom-0">
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => setIsAddingProduct(false)}
+                    className="flex-1 py-4 bg-white border border-outline-variant/30 text-outline rounded-2xl font-label-caps text-[11px] hover:bg-surface-variant transition-all uppercase tracking-widest"
+                  >
+                    Discard
+                  </button>
+                  <button 
+                    type="submit"
+                    onClick={handleSubmit}
+                    className="flex-[2] py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+                  >
+                    <Check size={16} /> {editingId ? 'Update Piece' : 'Register Piece'}
                   </button>
                 </div>
               </div>

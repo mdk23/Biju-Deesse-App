@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Bell, 
-  Download, 
-  Filter, 
-  MoreVertical, 
-  UserPlus, 
-  Send, 
-  FileText, 
+import {
+  Plus,
+  Search,
+  Bell,
+  Download,
+  Filter,
+  MoreVertical,
+  UserPlus,
+  Send,
+  FileText,
   AlertCircle,
   TrendingUp,
   Users,
@@ -26,139 +26,50 @@ import {
   ChevronDown,
   ArrowUpDown,
   Mail,
-  Smartphone
+  Smartphone,
+  Camera,
+  Check
 } from 'lucide-react';
-import { 
-  LineChart, 
-  Line, 
-  ResponsiveContainer, 
-  Tooltip, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
+import {
+  LineChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
   CartesianGrid,
   AreaChart,
   Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { toast } from 'sonner';
+
 // --- Types & Interfaces ---
 
 interface Customer {
-  id: string;
+  _id: string;
   firstName: string;
   lastName: string;
-  avatar: string;
   phone1: string;
-  phone2: string;
-  address: string;
-  email: string;
-  totalPurchases: number;
-  orderCount: number;
-  avgOrderValue: number;
+  phone2?: string;
+  phone3?: string;
+  email?: string;
+  loyaltyTier: string;
+  totalSpent: number;
   outstandingBalance: number;
-  lastPurchaseDate: string;
-  customerSince: string;
-  status: 'VIP' | 'Premium' | 'Regular' | 'At Risk';
-  notes: string;
-  favoriteProducts: string[];
-  mostPurchasedCategory: string;
+  creditLimit: number;
+  notes?: string;
 }
-
-// --- Mock Data ---
-
-const SPARKLINE_DATA = [
-  { value: 10 }, { value: 25 }, { value: 15 }, { value: 30 }, { value: 20 }, { value: 45 }, { value: 40 }
-];
-
-const MOCK_CUSTOMERS: Customer[] = [
-  {
-    id: 'CST-2941',
-    firstName: 'Isabel',
-    lastName: 'dos Santos',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100',
-    phone1: '+258 84 123 4567',
-    phone2: '+258 21 456 789',
-    address: 'Av. Julius Nyerere, Maputo',
-    email: 'isabel.s@luxmail.com',
-    totalPurchases: 14800000,
-    orderCount: 42,
-    avgOrderValue: 352380,
-    outstandingBalance: 0,
-    lastPurchaseDate: '2023-10-12',
-    customerSince: '2021-05-20',
-    status: 'VIP',
-    notes: 'Prefers 18K Rose Gold. Top tier client, always invite to private launches.',
-    favoriteProducts: ['Solitaire Eternity Ring', 'Celestial Aura Earrings'],
-    mostPurchasedCategory: 'Rings'
-  },
-  {
-    id: 'CST-2942',
-    firstName: 'Fernando',
-    lastName: 'Moma',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100',
-    phone1: '+258 82 987 6543',
-    phone2: '',
-    address: 'Matola A, Rua das Acácias',
-    email: 'f.moma@corporatenet.mz',
-    totalPurchases: 9200000,
-    orderCount: 18,
-    avgOrderValue: 511111,
-    outstandingBalance: 400000,
-    lastPurchaseDate: '2023-10-11',
-    customerSince: '2022-03-15',
-    status: 'Premium',
-    notes: 'Collector of vintage watches. High-value transactions.',
-    favoriteProducts: ['Vintage Chronograph', 'Leather Watch Case'],
-    mostPurchasedCategory: 'Watches'
-  },
-  {
-    id: 'CST-2943',
-    firstName: 'Teresa',
-    lastName: 'Amaro',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=100',
-    phone1: '+258 84 333 9999',
-    phone2: '+258 87 222 1111',
-    address: 'Sommerschield II, Maputo',
-    email: 't.amaro@fashionmz.com',
-    totalPurchases: 7100000,
-    orderCount: 25,
-    avgOrderValue: 284000,
-    outstandingBalance: 185000,
-    lastPurchaseDate: '2023-10-10',
-    customerSince: '2022-06-12',
-    status: 'Regular',
-    notes: 'Loves Arctic Frost collection. Frequently buys gifts.',
-    favoriteProducts: ['Arctic Frost Necklace', 'Silver Pendants'],
-    mostPurchasedCategory: 'Necklaces'
-  },
-  {
-    id: 'CST-2944',
-    firstName: 'Marcus',
-    lastName: 'Thorne',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=100',
-    phone1: '+258 85 000 1122',
-    phone2: '',
-    address: 'Polana Caniço, Maputo',
-    email: 'marcus.thorne@globalbiz.com',
-    totalPurchases: 1240000,
-    orderCount: 5,
-    avgOrderValue: 248000,
-    outstandingBalance: 0,
-    lastPurchaseDate: '2023-09-25',
-    customerSince: '2023-01-10',
-    status: 'At Risk',
-    notes: 'Last purchase was 3 months ago. Needs re-engagement.',
-    favoriteProducts: ['Gold Cufflinks', 'Signet Ring'],
-    mostPurchasedCategory: 'Accessories'
-  }
-];
 
 // --- Sub-components ---
 
 const KPICard = ({ title, value, subValue, trend, icon: Icon, color, data }: any) => (
-  <motion.div 
+  <motion.div
     whileHover={{ y: -5, transition: { duration: 0.2 } }}
     className="glass-panel p-6 rounded-2xl relative overflow-hidden group border border-white/50 hover:shadow-2xl hover:shadow-primary/5 transition-all"
   >
@@ -172,26 +83,26 @@ const KPICard = ({ title, value, subValue, trend, icon: Icon, color, data }: any
         </span>
       )}
     </div>
-    
+
     <p className="font-label-caps text-[10px] text-outline mb-1">{title}</p>
     <h3 className="font-headline-md text-2xl text-primary mb-1">{value}</h3>
     <p className="font-body-md text-xs text-on-surface-variant opacity-70 mb-4">{subValue}</p>
 
     <div className="h-12 w-full mt-2">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data || SPARKLINE_DATA}>
+        <AreaChart data={[{ value: 10 }, { value: 20 }, { value: 15 }, { value: 30 }, { value: 25 }, { value: 40 }]}>
           <defs>
             <linearGradient id={`grad-${color}`} x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor={color === 'primary' ? '#8a4853' : color === 'secondary' ? '#735c00' : '#6e5371'} stopOpacity={0.2} />
               <stop offset="100%" stopColor={color === 'primary' ? '#8a4853' : color === 'secondary' ? '#735c00' : '#6e5371'} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <Area 
-            type="monotone" 
-            dataKey="value" 
-            stroke={color === 'primary' ? '#8a4853' : color === 'secondary' ? '#735c00' : '#6e5371'} 
-            fill={`url(#grad-${color})`} 
-            strokeWidth={2} 
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={color === 'primary' ? '#8a4853' : color === 'secondary' ? '#735c00' : '#6e5371'}
+            fill={`url(#grad-${color})`}
+            strokeWidth={2}
             dot={false}
           />
         </AreaChart>
@@ -203,21 +114,114 @@ const KPICard = ({ title, value, subValue, trend, icon: Icon, color, data }: any
 // --- Main Component ---
 
 export default function Customers() {
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const customers = useQuery(api.customers.list) || [];
+  const upsertCustomer = useMutation(api.customers.upsert);
+  const deleteCustomer = useMutation(api.customers.remove);
+
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
-  const [sortBy, setSortBy] = useState('name');
+
+  // Form State
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    phone1: '',
+    phone2: '',
+    phone3: '',
+    email: '',
+    loyaltyTier: 'regular',
+    creditLimit: 0,
+    notes: ''
+  });
 
   const filteredCustomers = useMemo(() => {
-    return MOCK_CUSTOMERS.filter(c => {
-      const name = `${c.firstName} ${c.lastName}`.toLowerCase();
-      const matchesSearch = name.includes(searchQuery.toLowerCase()) || 
-                           c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           c.phone1.includes(searchQuery);
-      const matchesStatus = statusFilter === 'All Status' || c.status === statusFilter;
+    return customers.filter(c => {
+      const fullName = `${c.firstName} ${c.lastName}`.toLowerCase();
+      const matchesSearch = fullName.includes(searchQuery.toLowerCase()) ||
+        c.phone1.includes(searchQuery);
+      const matchesStatus = statusFilter === 'All Status' || c.loyaltyTier.toLowerCase() === statusFilter.toLowerCase();
       return matchesSearch && matchesStatus;
     });
-  }, [searchQuery, statusFilter]);
+  }, [customers, searchQuery, statusFilter]);
+
+  const brief = useQuery(api.analytics.getExecutiveBrief);
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
+      .format(val)
+      .replace('MZN', 'Mt');
+
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setFormData({
+      firstName: '',
+      lastName: '',
+      phone1: '',
+      phone2: '',
+      phone3: '',
+      email: '',
+      loyaltyTier: 'regular',
+      creditLimit: 0,
+      notes: ''
+    });
+    setIsAddingCustomer(true);
+  };
+
+  const handleOpenEdit = (customer: any) => {
+    setEditingId(customer._id);
+    setFormData({
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      phone1: customer.phone1,
+      phone2: customer.phone2 || '',
+      phone3: customer.phone3 || '',
+      email: customer.email || '',
+      loyaltyTier: customer.loyaltyTier.toLowerCase(),
+      creditLimit: customer.creditLimit || 0,
+      notes: customer.notes || ''
+    });
+    setIsAddingCustomer(true);
+    setSelectedCustomer(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await upsertCustomer({
+        id: (editingId ?? undefined) as any,
+        ...formData,
+        totalSpent: editingId ? (customers.find(c => c._id === editingId)?.totalSpent || 0) : 0,
+        outstandingBalance: editingId ? (customers.find(c => c._id === editingId)?.outstandingBalance || 0) : 0,
+      });
+      setIsAddingCustomer(false);
+      setEditingId(null);
+      toast.success(editingId ? "Client profile updated successfully" : "New client enrolled successfully");
+    } catch (error) {
+      toast.error("Failed to save customer profile");
+      console.error("Failed to save customer:", error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    toast.warning("Are you sure you want to delete this customer?", {
+      description: "This action cannot be undone.",
+      action: {
+        label: "Delete",
+        onClick: async () => {
+          try {
+            await deleteCustomer({ id: id as any });
+            setSelectedCustomer(null);
+            toast.success("Customer record purged from boutique database");
+          } catch (error) {
+            toast.error("Failed to delete customer");
+            console.error("Failed to delete customer:", error);
+          }
+        },
+      },
+    });
+  };
 
   return (
     <div className="max-w-[1600px] mx-auto">
@@ -226,8 +230,8 @@ export default function Customers() {
         <div className="flex items-center gap-6 w-full md:w-auto">
           <div className="relative group flex-1 md:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors" size={18} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Search clients, phones, IDs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -245,7 +249,10 @@ export default function Customers() {
             <button className="px-4 py-2 font-label-caps text-[10px] text-primary hover:bg-primary/5 rounded-xl transition-all">LAST 30 DAYS</button>
             <Calendar size={14} className="text-outline mr-2" />
           </div>
-          <button className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all whitespace-nowrap">
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all whitespace-nowrap"
+          >
             <UserPlus size={16} /> ADD CLIENT
           </button>
           <button className="p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-primary/5 transition-all shadow-sm">
@@ -271,41 +278,41 @@ export default function Customers() {
 
       {/* KPI Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
-        <KPICard 
-          title="TOTAL CUSTOMERS" 
-          value="1,284" 
+        <KPICard
+          title="TOTAL CUSTOMERS"
+          value={brief ? brief.activeClients.toString() : '...'}
           subValue="Active boutique database"
           trend={12.5}
           icon={Users}
           color="primary"
         />
-        <KPICard 
-          title="NEW THIS MONTH" 
-          value="48" 
+        <KPICard
+          title="NEW THIS MONTH"
+          value="48"
           subValue="Growth of 4.2%"
           trend={8.2}
           icon={UserPlus}
           color="secondary"
         />
-        <KPICard 
-          title="RETURNING" 
-          value="72.4%" 
+        <KPICard
+          title="RETURNING"
+          value="72.4%"
           subValue="Customer loyalty index"
           trend={2.1}
           icon={TrendingUp}
           color="tertiary"
         />
-        <KPICard 
-          title="OUTSTANDING" 
-          value="585.000 Mt" 
+        <KPICard
+          title="OUTSTANDING"
+          value={brief ? formatCurrency(brief.totalRevenue * 0.15) : '...'} // Placeholder for actual debt logic
           subValue="Credits pending payment"
           trend={-5.4}
           icon={CreditCard}
           color="error"
         />
-        <KPICard 
-          title="AVG CUSTOMER SPEND" 
-          value="312.400 Mt" 
+        <KPICard
+          title="AVG CUSTOMER SPEND"
+          value={brief && brief.activeClients > 0 ? formatCurrency(brief.totalRevenue / brief.activeClients) : '...'}
           subValue="Lifetime value average"
           trend={15.8}
           icon={DollarSign}
@@ -322,26 +329,23 @@ export default function Customers() {
               {filteredCustomers.length} CLIENTS
             </span>
           </div>
-          
+
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="relative flex-1 md:w-48">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={14} />
-              <select 
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white/50 border border-outline-variant/30 rounded-xl text-[11px] font-label-caps focus:ring-2 focus:ring-primary/10 outline-none transition-all appearance-none"
               >
                 <option>All Status</option>
                 <option>VIP</option>
-                <option>Premium</option>
-                <option>Regular</option>
-                <option>At Risk</option>
+                <option>Platinum</option>
+                <option>Gold</option>
+                <option>Standard</option>
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-outline pointer-events-none" size={14} />
             </div>
-            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-outline-variant/30 rounded-xl font-label-caps text-[11px] hover:bg-surface-variant transition-all">
-              <ArrowUpDown size={14} /> SORT BY
-            </button>
           </div>
         </div>
 
@@ -351,32 +355,27 @@ export default function Customers() {
               <tr className="border-b border-primary/5 font-label-caps text-[11px] text-outline">
                 <th className="px-8 py-5">CLIENT</th>
                 <th className="px-6 py-5">CONTACTS</th>
-                <th className="px-6 py-5">ADDRESS</th>
                 <th className="px-6 py-5">PURCHASES</th>
-                <th className="px-6 py-5">ORDERS</th>
                 <th className="px-6 py-5">OUTSTANDING</th>
                 <th className="px-6 py-5">STATUS</th>
                 <th className="px-8 py-5 text-right">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-primary/5">
-              {filteredCustomers.map((customer) => (
-                <motion.tr 
-                  layoutId={customer.id}
-                  key={customer.id} 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
+              {filteredCustomers.map((customer: any) => (
+                <tr
+                  key={customer._id}
                   className="hover:bg-white/40 transition-colors group cursor-pointer"
                   onClick={() => setSelectedCustomer(customer)}
                 >
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-md group-hover:scale-110 transition-transform">
-                        <img src={customer.avatar} alt="" className="w-full h-full object-cover" />
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-md text-primary font-bold">
+                        {customer.firstName.charAt(0)}{customer.lastName.charAt(0)}
                       </div>
                       <div>
                         <p className="font-body-md text-sm font-bold text-on-surface">{customer.firstName} {customer.lastName}</p>
-                        <p className="font-data-tabular text-[10px] text-outline">{customer.id}</p>
+                        <p className="font-data-tabular text-[10px] text-outline">CLIENT</p>
                       </div>
                     </div>
                   </td>
@@ -385,35 +384,27 @@ export default function Customers() {
                       <div className="flex items-center gap-2 font-data-tabular text-xs text-on-surface">
                         <Smartphone size={12} className="text-outline" /> {customer.phone1}
                       </div>
-                      <div className="flex items-center gap-2 font-data-tabular text-[10px] text-outline">
-                        <Mail size={12} className="text-outline" /> {customer.email}
-                      </div>
+                      {customer.email && (
+                        <div className="flex items-center gap-2 font-data-tabular text-[10px] text-outline">
+                          <Mail size={12} className="text-outline" /> {customer.email}
+                        </div>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-5">
-                    <p className="font-body-md text-xs text-on-surface-variant max-w-[150px] truncate">
-                      {customer.address}
-                    </p>
-                  </td>
                   <td className="px-6 py-5 font-data-tabular text-sm font-bold text-primary">
-                    {(customer.totalPurchases).toLocaleString()} Mt
-                  </td>
-                  <td className="px-6 py-5 font-data-tabular text-sm">
-                    {customer.orderCount}
+                    {formatCurrency(customer.totalSpent)}
                   </td>
                   <td className="px-6 py-5">
                     <span className={`font-data-tabular text-sm ${customer.outstandingBalance > 0 ? 'text-error font-bold' : 'text-outline opacity-50'}`}>
-                      {customer.outstandingBalance > 0 ? `${(customer.outstandingBalance).toLocaleString()} Mt` : 'No balance'}
+                      {customer.outstandingBalance > 0 ? formatCurrency(customer.outstandingBalance) : 'No balance'}
                     </span>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      customer.status === 'VIP' ? 'bg-primary text-on-primary' :
-                      customer.status === 'Premium' ? 'bg-secondary-container text-on-secondary-container' :
-                      customer.status === 'Regular' ? 'bg-tertiary-container/30 text-on-tertiary-container' :
-                      'bg-error-container text-on-error-container'
-                    }`}>
-                      {customer.status}
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${customer.loyaltyTier.toLowerCase() === 'platinum' ? 'bg-primary text-on-primary' :
+                      customer.loyaltyTier.toLowerCase() === 'gold' ? 'bg-secondary-container text-on-secondary-container' :
+                        'bg-tertiary-container/30 text-on-tertiary-container'
+                      }`}>
+                      {customer.loyaltyTier}
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">
@@ -421,12 +412,12 @@ export default function Customers() {
                       <MoreVertical size={16} />
                     </button>
                   </td>
-                </motion.tr>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-        
+
         <div className="px-8 py-5 bg-white/40 flex justify-between items-center border-t border-primary/5">
           <div className="flex items-center gap-4">
             <span className="font-label-caps text-[10px] text-outline">Show rows:</span>
@@ -450,14 +441,14 @@ export default function Customers() {
       <AnimatePresence>
         {selectedCustomer && (
           <div className="fixed inset-0 z-[100] flex items-center justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedCustomer(null)}
               className="absolute inset-0 bg-black/20 backdrop-blur-md"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -466,23 +457,20 @@ export default function Customers() {
             >
               {/* Drawer Header */}
               <div className="p-8 pb-12 bg-atelier-gradient relative">
-                <button 
+                <button
                   onClick={() => setSelectedCustomer(null)}
                   className="absolute top-6 right-6 p-2 bg-white/40 backdrop-blur-md rounded-full text-primary hover:bg-white transition-all shadow-sm"
                 >
                   <X size={20} />
                 </button>
-                
+
                 <div className="flex flex-col items-center text-center">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-2xl mb-4 relative group">
-                    <img src={selectedCustomer.avatar} alt="" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer">
-                      <Plus className="text-white" size={24} />
-                    </div>
+                  <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-2xl mb-4 text-primary font-bold text-3xl">
+                    {selectedCustomer.firstName.charAt(0)}{selectedCustomer.lastName.charAt(0)}
                   </div>
                   <h2 className="font-headline-md text-3xl text-primary">{selectedCustomer.firstName} {selectedCustomer.lastName}</h2>
-                  <p className="font-label-caps text-xs text-outline mb-4">{selectedCustomer.id} • PLATINUM MEMBER</p>
-                  
+                  <p className="font-label-caps text-xs text-outline mb-4">{selectedCustomer._id} • {selectedCustomer.loyaltyTier.toUpperCase()} MEMBER</p>
+
                   <div className="flex gap-3">
                     <button className="flex items-center gap-2 px-6 py-2 bg-primary text-on-primary rounded-xl font-label-caps text-[10px] shadow-lg shadow-primary/20 hover:opacity-90 transition-all">
                       <ShoppingBag size={14} /> NEW ORDER
@@ -508,8 +496,12 @@ export default function Customers() {
                       <p className="font-data-tabular text-sm font-bold text-on-surface">{selectedCustomer.phone1}</p>
                     </div>
                     <div>
-                      <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><Smartphone size={10} /> SECONDARY PHONE</p>
+                      <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><Smartphone size={10} /> ALTERNATIVE</p>
                       <p className="font-data-tabular text-sm font-bold text-on-surface">{selectedCustomer.phone2 || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><Smartphone size={10} /> SECONDARY</p>
+                      <p className="font-data-tabular text-sm font-bold text-on-surface">{selectedCustomer.phone3 || '—'}</p>
                     </div>
                     <div className="col-span-2">
                       <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><MapPin size={10} /> RESIDENTIAL ADDRESS</p>
@@ -517,11 +509,11 @@ export default function Customers() {
                     </div>
                     <div>
                       <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><Calendar size={10} /> CUSTOMER SINCE</p>
-                      <p className="font-body-md text-sm font-bold text-on-surface">{selectedCustomer.customerSince}</p>
+                      <p className="font-body-md text-sm font-bold text-on-surface">MEMBER</p>
                     </div>
                     <div>
                       <p className="font-label-caps text-[9px] text-outline mb-1 flex items-center gap-1"><Mail size={10} /> EMAIL ADDRESS</p>
-                      <p className="font-body-md text-sm font-bold text-primary truncate">{selectedCustomer.email}</p>
+                      <p className="font-body-md text-sm font-bold text-primary truncate">{selectedCustomer.email || 'No email'}</p>
                     </div>
                   </div>
                 </section>
@@ -535,32 +527,12 @@ export default function Customers() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
                       <p className="font-label-caps text-[9px] text-primary mb-1">TOTAL PURCHASES</p>
-                      <p className="font-headline-md text-xl text-primary">{(selectedCustomer.totalPurchases).toLocaleString()} Mt</p>
+                      <p className="font-headline-md text-xl text-primary">{formatCurrency(selectedCustomer.totalSpent)}</p>
                     </div>
                     <div className="bg-secondary/5 p-4 rounded-2xl border border-secondary/10">
-                      <p className="font-label-caps text-[9px] text-secondary mb-1">TOTAL ORDERS</p>
-                      <p className="font-headline-md text-xl text-secondary">{selectedCustomer.orderCount}</p>
+                      <p className="font-label-caps text-[9px] text-secondary mb-1">OUTSTANDING BALANCE</p>
+                      <p className="font-headline-md text-xl text-secondary">{formatCurrency(selectedCustomer.outstandingBalance)}</p>
                     </div>
-                    <div className="bg-tertiary/5 p-4 rounded-2xl border border-tertiary/10">
-                      <p className="font-label-caps text-[9px] text-tertiary mb-1">AVG ORDER VALUE</p>
-                      <p className="font-headline-md text-xl text-tertiary">{(selectedCustomer.avgOrderValue).toLocaleString()} Mt</p>
-                    </div>
-                    <div className="bg-surface-container-highest p-4 rounded-2xl border border-outline-variant/30">
-                      <p className="font-label-caps text-[9px] text-outline mb-1">FAVORITE CATEGORY</p>
-                      <p className="font-headline-md text-xl text-on-surface">{selectedCustomer.mostPurchasedCategory}</p>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Favorite Products */}
-                <section>
-                  <h4 className="font-label-caps text-[11px] text-outline mb-4">FAVORITE PIECES</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedCustomer.favoriteProducts.map((product, i) => (
-                      <span key={i} className="px-4 py-2 bg-white/60 border border-white rounded-full text-xs font-medium text-primary shadow-sm">
-                        {product}
-                      </span>
-                    ))}
                   </div>
                 </section>
 
@@ -569,7 +541,7 @@ export default function Customers() {
                   <h4 className="font-label-caps text-[11px] text-outline mb-4">CLIENT NOTES</h4>
                   <div className="bg-secondary-fixed/10 p-5 rounded-3xl border border-secondary-fixed-dim/30">
                     <p className="font-body-md text-sm italic text-on-surface-variant leading-relaxed">
-                      "{selectedCustomer.notes}"
+                      "{selectedCustomer.notes || 'No notes available'}"
                     </p>
                   </div>
                 </section>
@@ -578,11 +550,225 @@ export default function Customers() {
               {/* Drawer Footer Actions */}
               <div className="p-8 border-t border-outline-variant/30 bg-white/20 sticky bottom-0">
                 <div className="grid grid-cols-2 gap-4">
-                  <button className="py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all">
+                  <button
+                    onClick={() => handleOpenEdit(selectedCustomer)}
+                    className="py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all"
+                  >
                     EDIT PROFILE
                   </button>
-                  <button className="py-4 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all">
+                  <button
+                    onClick={() => handleDelete(selectedCustomer._id)}
+                    className="py-4 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all"
+                  >
                     DELETE CUSTOMER
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Add Client Drawer */}
+      <AnimatePresence>
+        {isAddingCustomer && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-end">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddingCustomer(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-xl h-full bg-surface-container shadow-2xl overflow-y-auto border-l border-white/40 flex flex-col"
+            >
+              {/* Drawer Header */}
+              <div className="p-8 pb-12 bg-atelier-gradient relative">
+                <button
+                  onClick={() => setIsAddingCustomer(false)}
+                  className="absolute top-6 right-6 p-2 bg-white/40 backdrop-blur-md rounded-full text-primary hover:bg-white transition-all shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="flex flex-col items-center text-center mt-4">
+                  <div className="w-20 h-20 bg-white/40 backdrop-blur-md rounded-3xl border-2 border-white flex items-center justify-center text-primary shadow-xl mb-4 group cursor-pointer hover:bg-white transition-all">
+                    <Camera size={32} className="group-hover:scale-110 transition-transform" />
+                  </div>
+                  <h2 className="font-headline-md text-3xl text-primary uppercase tracking-tight">
+                    {editingId ? 'Update Client Profile' : 'New Client Registration'}
+                  </h2>
+                  <p className="font-label-caps text-[10px] text-outline mt-2 tracking-[0.2em]">BOUTIQUE MEMBER ENROLLMENT</p>
+                </div>
+              </div>
+
+              {/* Form Content */}
+              <form className="flex-1 p-8 space-y-8" onSubmit={handleSubmit}>
+                {/* Personal Section */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-primary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-primary tracking-widest">PERSONAL IDENTITY</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">FIRST NAME</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Eleanor"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">LAST NAME</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Vance"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Contact Section */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-secondary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-secondary tracking-widest">CONTACT & REACH</h4>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">PRIMARY PHONE</label>
+                      <div className="relative">
+                        <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                        <input
+                          type="tel"
+                          placeholder="+258 (Primary)"
+                          value={formData.phone1}
+                          onChange={(e) => setFormData({ ...formData, phone1: e.target.value })}
+                          className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">Secondary Phone</label>
+                        <div className="relative">
+                          <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                          <input
+                            type="tel"
+                            placeholder="+258 (Secondary)"
+                            value={formData.phone2}
+                            onChange={(e) => setFormData({ ...formData, phone2: e.target.value })}
+                            className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="font-label-caps text-[9px] text-outline ml-1">Alternative Phone</label>
+                        <div className="relative">
+                          <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                          <input
+                            type="tel"
+                            placeholder="+258 (Alternative)"
+                            value={formData.phone3}
+                            onChange={(e) => setFormData({ ...formData, phone3: e.target.value })}
+                            className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">EMAIL ADDRESS</label>
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                        <input
+                          type="email"
+                          placeholder="client@luxury.com"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Classification Section */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-tertiary rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-tertiary tracking-widest">CLIENT CLASSIFICATION</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">MEMBERSHIP TIER</label>
+                      <select
+                        value={formData.loyaltyTier}
+                        onChange={(e) => setFormData({ ...formData, loyaltyTier: e.target.value.toLowerCase() })}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-xs font-bold text-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm appearance-none"
+                      >
+                        <option value="regular">REGULAR</option>
+                        <option value="premium">PREMIUM</option>
+                        <option value="vip">VIP</option>
+                        <option value="platinum">PLATINUM</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-label-caps text-[9px] text-outline ml-1">INITIAL CREDIT LIMIT</label>
+                      <input
+                        type="number"
+                        placeholder="0.00 Mt"
+                        value={formData.creditLimit}
+                        onChange={(e) => setFormData({ ...formData, creditLimit: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Boutique Notes */}
+                <section>
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-1 h-4 bg-outline rounded-full"></div>
+                    <h4 className="font-label-caps text-[11px] text-outline tracking-widest">BOUTIQUE NOTES</h4>
+                  </div>
+                  <textarea
+                    rows={4}
+                    placeholder="Style preferences, preferred metals, special dates..."
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-2xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm resize-none italic"
+                  />
+                </section>
+              </form>
+
+              {/* Drawer Footer Actions */}
+              <div className="p-8 border-t border-outline-variant/30 bg-white/20 sticky bottom-0">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setIsAddingCustomer(false)}
+                    className="flex-1 py-4 bg-white border border-outline-variant/30 text-outline rounded-2xl font-label-caps text-[11px] hover:bg-surface-variant transition-all uppercase tracking-widest"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="submit"
+                    onClick={handleSubmit}
+                    className="flex-[2] py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+                  >
+                    <Check size={16} /> {editingId ? 'Update Client' : 'Create Client Profile'}
                   </button>
                 </div>
               </div>

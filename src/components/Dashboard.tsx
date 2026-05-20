@@ -36,30 +36,9 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 
-// --- Mock Data ---
-
-const PERFORMANCE_DATA = [
-  { name: 'Mon', revenue: 420000, orders: 12 },
-  { name: 'Tue', revenue: 380000, orders: 8 },
-  { name: 'Wed', revenue: 510000, orders: 15 },
-  { name: 'Thu', revenue: 440000, orders: 10 },
-  { name: 'Fri', revenue: 620000, orders: 22 },
-  { name: 'Sat', revenue: 850000, orders: 34 },
-  { name: 'Sun', revenue: 710000, orders: 28 },
-];
-
-const CATEGORY_STATS = [
-  { name: 'High-End', value: 72, color: '#8a4853' },
-  { name: 'Bespoke', value: 18, color: '#735c00' },
-  { name: 'Limited', value: 10, color: '#6e5371' },
-];
-
-const RECENT_TRANSACTIONS = [
-  { id: '#AT-92841', client: 'Eleanor Vance', collection: 'Celestial Aura', status: 'Shipped', amount: '12.4M Mt', date: 'Just now' },
-  { id: '#AT-92842', client: 'Julian Rossi', collection: 'Timeless Gold', status: 'Pending', amount: '4.9M Mt', date: '2 mins ago' },
-  { id: '#AT-92843', client: 'Sarah Jenkins', collection: 'Arctic Frost', status: 'Shipped', amount: '24.1M Mt', date: '15 mins ago' },
-  { id: '#AT-92844', client: 'Marcus Thorne', collection: 'Bespoke Diamond', status: 'Processing', amount: '8.2M Mt', date: '1 hour ago' },
-];
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { toast } from 'sonner';
 
 // --- Sub-components ---
 
@@ -88,6 +67,17 @@ const ExecutiveKPI = ({ title, value, trend, icon: Icon, color, subText }: any) 
 // --- Main Component ---
 
 export default function Dashboard() {
+  const brief = useQuery(api.analytics.getExecutiveBrief);
+  const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
+  const recentTransactions = useQuery(api.transactions.list);
+  const lowStock = useQuery(api.products.getLowStock);
+
+  // Formatting helpers
+  const formatCurrency = (val: number) => 
+    new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
+      .format(val)
+      .replace('MZN', 'Mt');
+
   return (
     <div className="max-w-[1600px] mx-auto">
       {/* Morning Greeting Section */}
@@ -105,12 +95,17 @@ export default function Dashboard() {
         <div className="flex items-center gap-4 w-full md:w-auto">
           <div className="hidden lg:flex flex-col items-end px-6 border-r border-outline-variant/30">
             <span className="font-label-caps text-[10px] text-outline tracking-tighter">ESTIMATED VALUATION</span>
-            <span className="font-data-tabular text-xl font-bold text-primary tracking-tight">4.281.900 Mt</span>
+            <span className="font-data-tabular text-xl font-bold text-primary tracking-tight">
+              {brief ? formatCurrency(brief.estimatedValuation) : '---'}
+            </span>
           </div>
           <button className="flex-1 md:flex-none p-4 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-white transition-all shadow-sm">
             <Bell size={20} />
           </button>
-          <button className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2">
+          <button 
+            onClick={() => toast.info("New Acquisition stream coming soon to operational intelligence")}
+            className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+          >
             <Plus size={18} /> NEW ACQUISITION
           </button>
         </div>
@@ -119,28 +114,28 @@ export default function Dashboard() {
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         <ExecutiveKPI 
-          title="TOTAL SALES" 
-          value="1.284.000 Mt" 
+          title="TOTAL REVENUE" 
+          value={brief ? formatCurrency(brief.totalRevenue) : '...'} 
           trend={12.5} 
           icon={ShoppingBag} 
           color="primary"
-          subText="Units moved this quarter: 142"
+          subText="Gross revenue across all pieces"
         />
         <ExecutiveKPI 
-          title="QUARTERLY REVENUE" 
-          value="32.8M Mt" 
+          title="TOTAL PROFIT" 
+          value={brief ? formatCurrency(brief.totalProfit) : '...'} 
           trend={8.2} 
           icon={TrendingUp} 
           color="secondary"
-          subText="Avg transaction: 1.870.000 Mt"
+          subText="Net earnings after costs"
         />
         <ExecutiveKPI 
           title="ACTIVE CLIENTS" 
-          value="842" 
+          value={brief ? brief.activeClients.toString() : '...'} 
           trend={5.4} 
           icon={Users} 
           color="tertiary"
-          subText="Retained 72% of VIP tier"
+          subText="Managed within Luxury CRM"
         />
         <ExecutiveKPI 
           title="BOUTIQUE REACH" 
@@ -160,18 +155,11 @@ export default function Dashboard() {
               <h3 className="font-headline-md text-2xl text-primary">Revenue Command Center</h3>
               <p className="font-label-caps text-[10px] text-outline tracking-widest">WEEKLY PERFORMANCE OVERVIEW</p>
             </div>
-            <div className="flex gap-2">
-              <button className="px-4 py-2 bg-white/40 border border-white/60 rounded-xl font-label-caps text-[10px] text-primary">DOWNLOAD REPORT</button>
-              <select className="bg-white/40 border border-white/60 rounded-xl font-label-caps text-[10px] text-primary px-3 outline-none">
-                <option>WEEKLY</option>
-                <option>MONTHLY</option>
-              </select>
-            </div>
           </div>
           
           <div className="h-80 w-full relative z-10">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={PERFORMANCE_DATA}>
+              <AreaChart data={revenueHistory || []}>
                 <defs>
                   <linearGradient id="dashboardRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#8a4853" stopOpacity={0.2}/>
@@ -188,9 +176,6 @@ export default function Dashboard() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          
-          {/* Subtle Background Pattern */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
         </div>
 
         <div className="glass-panel p-8 rounded-[2rem] border border-white/50 flex flex-col items-center text-center">
@@ -201,7 +186,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie
-                  data={CATEGORY_STATS}
+                  data={brief?.categoryDistribution || []}
                   cx="50%"
                   cy="50%"
                   innerRadius={70}
@@ -209,20 +194,16 @@ export default function Dashboard() {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {CATEGORY_STATS.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  {(brief?.categoryDistribution || []).map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={['#8a4853', '#735c00', '#6e5371', '#857374'][index % 4]} />
                   ))}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            <div className="absolute flex flex-col items-center">
-              <span className="font-headline-lg text-4xl text-primary">72%</span>
-              <span className="font-label-caps text-[10px] text-outline">ULTRA-LUXE</span>
-            </div>
           </div>
           
-          <div className="grid grid-cols-3 gap-2 w-full mt-6">
-            {CATEGORY_STATS.map((stat) => (
+          <div className="grid grid-cols-2 gap-2 w-full mt-6">
+            {(brief?.categoryDistribution || []).slice(0, 4).map((stat: any) => (
               <div key={stat.name} className="flex flex-col items-center p-3 bg-white/40 rounded-2xl border border-white/60">
                 <span className="font-data-tabular text-sm font-bold text-primary">{stat.value}%</span>
                 <span className="font-label-caps text-[8px] text-outline truncate">{stat.name.toUpperCase()}</span>
@@ -235,41 +216,38 @@ export default function Dashboard() {
       {/* Bento Activity Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Recent Activity Table */}
-        <div className="lg:col-span-2 glass-panel rounded-[2rem] overflow-hidden border border-white/50 bg-white/20">
-          <div className="p-8 border-b border-primary/10 flex justify-between items-center bg-white/40">
+        <div className="lg:col-span-2 glass-panel rounded-[2rem] border border-white/50 bg-white/20">
+          <div className="p-8 border-b border-primary/10 flex justify-between items-center bg-white/40 rounded-t-[2rem]">
             <div>
               <h3 className="font-headline-md text-xl text-primary">Global Activity</h3>
               <p className="font-label-caps text-[9px] text-outline tracking-widest">REAL-TIME TRANSACTION STREAM</p>
             </div>
-            <button className="p-3 bg-white/40 rounded-xl text-primary hover:bg-white transition-all shadow-sm">
-              <Calendar size={18} />
-            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-primary/5 font-label-caps text-[10px] text-primary/70">
-                  <th className="px-8 py-4">ORDER ID</th>
-                  <th className="px-6 py-4">CLIENT</th>
-                  <th className="px-6 py-4">COLLECTION</th>
+                  <th className="px-8 py-4">RECEIPT</th>
+                  <th className="px-6 py-4">CASHIER</th>
                   <th className="px-6 py-4">STATUS</th>
                   <th className="px-8 py-4 text-right">TOTAL</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-primary/5">
-                {RECENT_TRANSACTIONS.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-white/40 transition-colors group cursor-pointer">
-                    <td className="px-8 py-5 font-data-tabular text-xs font-bold text-primary">{tx.id}</td>
-                    <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.client}</td>
-                    <td className="px-6 py-5 font-label-caps text-[10px] text-on-surface-variant opacity-70">{tx.collection}</td>
+                {(recentTransactions || []).slice(0, 5).map((tx) => (
+                  <tr key={tx._id} className="hover:bg-white/40 transition-colors group cursor-pointer">
+                    <td className="px-8 py-5 font-data-tabular text-xs font-bold text-primary">{tx.receiptNumber}</td>
+                    <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.cashierName}</td>
                     <td className="px-6 py-5">
                       <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                        tx.status === 'Shipped' ? 'bg-secondary-container/20 text-secondary' : 'bg-primary/10 text-primary'
+                        tx.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
+                        tx.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
+                        'bg-error-container/20 text-error'
                       }`}>
                         {tx.status}
                       </span>
                     </td>
-                    <td className="px-8 py-5 font-data-tabular text-sm font-bold text-right text-primary">{tx.amount}</td>
+                    <td className="px-8 py-5 font-data-tabular text-sm font-bold text-right text-primary">{formatCurrency(tx.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -292,15 +270,28 @@ export default function Dashboard() {
               <h4 className="font-headline-md text-lg text-primary">Attention Required</h4>
             </div>
             <div className="space-y-4">
-              <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
-                <Package className="text-outline mt-1" size={18} />
-                <div>
-                  <p className="font-label-caps text-[10px] text-on-surface font-bold">CRITICAL STOCK: SOLITAIRE ETERNITY</p>
-                  <p className="font-body-md text-xs text-error">Only 2 units remaining in Main Atelier.</p>
+              {(lowStock || []).length > 0 ? (
+                lowStock!.slice(0, 3).map((item) => (
+                  <div key={item._id} className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
+                    <Package className="text-error mt-1" size={18} />
+                    <div>
+                      <p className="font-label-caps text-[10px] text-on-surface font-bold uppercase">CRITICAL STOCK: {item.name}</p>
+                      <p className="font-body-md text-xs text-error">Only {item.stock} units remaining in inventory.</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4 opacity-60">
+                   <ShieldCheck className="text-secondary mt-1" size={18} />
+                   <div>
+                     <p className="font-label-caps text-[10px] text-on-surface font-bold">ALL SYSTEMS CLEAR</p>
+                     <p className="font-body-md text-xs text-on-surface-variant">Inventory levels healthy across all ateliers.</p>
+                   </div>
                 </div>
-              </div>
+              )}
+              
               <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
-                <ShieldCheck className="text-outline mt-1" size={18} />
+                <ShieldCheck className="text-secondary mt-1" size={18} />
                 <div>
                   <p className="font-label-caps text-[10px] text-on-surface font-bold">INSURANCE RENEWAL</p>
                   <p className="font-body-md text-xs text-on-surface-variant">Vault insurance expires in 12 days.</p>
@@ -308,7 +299,7 @@ export default function Dashboard() {
               </div>
             </div>
             <button className="w-full mt-6 py-4 bg-white border border-error/20 text-error rounded-2xl font-label-caps text-[10px] hover:bg-error/5 transition-all">
-              RESOLVE ALL ALERTS
+              VIEW INVENTORY CONTROL
             </button>
           </div>
 
