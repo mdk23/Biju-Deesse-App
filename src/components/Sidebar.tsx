@@ -11,9 +11,10 @@ type SidebarProps = {
 
 const navItems = [
   { href: '/', icon: 'home', label: 'Dashboard' },
-  { href: '/sales', icon: 'trending_up', label: 'Sales' },
+  { href: '/pos', icon: 'point_of_sale', label: 'POS' },
   { href: '/inventory', icon: 'inventory_2', label: 'Inventory' },
   { href: '/customers', icon: 'people', label: 'Customers' },
+  { href: '/sales', icon: 'trending_up', label: 'Sales' },
 ];
 
 export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: SidebarProps) {

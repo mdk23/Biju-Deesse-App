@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  TrendingUp, 
-  ShoppingBag, 
-  Users, 
-  CreditCard, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  Download, 
-  MoreVertical, 
-  Bell, 
+import {
+  TrendingUp,
+  ShoppingBag,
+  Users,
+  CreditCard,
+  ArrowUpRight,
+  ArrowDownRight,
+  Download,
+  MoreVertical,
+  Bell,
   Calendar,
   Star,
   Zap,
@@ -20,19 +20,19 @@ import {
   Package,
   AlertCircle
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  PieChart, 
-  Pie, 
-  Cell 
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 import { motion } from 'framer-motion';
 
@@ -43,7 +43,7 @@ import { toast } from 'sonner';
 // --- Sub-components ---
 
 const ExecutiveKPI = ({ title, value, trend, icon: Icon, color, subText }: any) => (
-  <motion.div 
+  <motion.div
     whileHover={{ scale: 1.02 }}
     className="glass-panel p-6 rounded-3xl border border-white/50 relative overflow-hidden group hover:shadow-2xl transition-all"
   >
@@ -59,7 +59,7 @@ const ExecutiveKPI = ({ title, value, trend, icon: Icon, color, subText }: any) 
     <p className="font-label-caps text-[11px] text-outline mb-1 tracking-widest uppercase">{title}</p>
     <h3 className="font-headline-md text-3xl text-primary mb-2">{value}</h3>
     <p className="font-body-md text-xs text-on-surface-variant opacity-70">{subText}</p>
-    
+
     <div className={`absolute bottom-0 left-0 h-1 w-full bg-${color}/20 group-hover:bg-${color}/40 transition-colors`}></div>
   </motion.div>
 );
@@ -73,7 +73,7 @@ export default function Dashboard() {
   const lowStock = useQuery(api.products.getLowStock);
 
   // Formatting helpers
-  const formatCurrency = (val: number) => 
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
       .format(val)
       .replace('MZN', 'Mt');
@@ -82,7 +82,7 @@ export default function Dashboard() {
     <div className="max-w-[1600px] mx-auto">
       {/* Morning Greeting Section */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-8">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
         >
@@ -91,7 +91,7 @@ export default function Dashboard() {
             The <span className="text-primary font-bold">Summer Haute Couture</span> collection is performing 24% above projections. Here is your boutique's daily brief.
           </p>
         </motion.div>
-        
+
         <div className="flex items-center gap-4 w-full md:w-auto">
           <div className="hidden lg:flex flex-col items-end px-6 border-r border-outline-variant/30">
             <span className="font-label-caps text-[10px] text-outline tracking-tighter">ESTIMATED VALUATION</span>
@@ -102,7 +102,7 @@ export default function Dashboard() {
           <button className="flex-1 md:flex-none p-4 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-white transition-all shadow-sm">
             <Bell size={20} />
           </button>
-          <button 
+          <button
             onClick={() => toast.info("New Acquisition stream coming soon to operational intelligence")}
             className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
           >
@@ -113,35 +113,35 @@ export default function Dashboard() {
 
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        <ExecutiveKPI 
-          title="TOTAL REVENUE" 
-          value={brief ? formatCurrency(brief.totalRevenue) : '...'} 
-          trend={12.5} 
-          icon={ShoppingBag} 
+        <ExecutiveKPI
+          title="TOTAL REVENUE"
+          value={brief ? formatCurrency(brief.totalRevenue) : '...'}
+          trend={12.5}
+          icon={ShoppingBag}
           color="primary"
           subText="Gross revenue across all pieces"
         />
-        <ExecutiveKPI 
-          title="TOTAL PROFIT" 
-          value={brief ? formatCurrency(brief.totalProfit) : '...'} 
-          trend={8.2} 
-          icon={TrendingUp} 
+        <ExecutiveKPI
+          title="TOTAL PROFIT"
+          value={brief ? formatCurrency(brief.totalProfit) : '...'}
+          trend={8.2}
+          icon={TrendingUp}
           color="secondary"
           subText="Net earnings after costs"
         />
-        <ExecutiveKPI 
-          title="ACTIVE CLIENTS" 
-          value={brief ? brief.activeClients.toString() : '...'} 
-          trend={5.4} 
-          icon={Users} 
+        <ExecutiveKPI
+          title="ACTIVE CLIENTS"
+          value={brief ? brief.activeClients.toString() : '...'}
+          trend={5.4}
+          icon={Users}
           color="tertiary"
           subText="Managed within Luxury CRM"
         />
-        <ExecutiveKPI 
-          title="BOUTIQUE REACH" 
-          value="14.2%" 
-          trend={-2.1} 
-          icon={Zap} 
+        <ExecutiveKPI
+          title="BOUTIQUE REACH"
+          value="14.2%"
+          trend={-2.1}
+          icon={Zap}
           color="primary"
           subText="Local luxury market share"
         />
@@ -156,21 +156,21 @@ export default function Dashboard() {
               <p className="font-label-caps text-[10px] text-outline tracking-widest">WEEKLY PERFORMANCE OVERVIEW</p>
             </div>
           </div>
-          
+
           <div className="h-80 w-full relative z-10">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueHistory || []}>
                 <defs>
                   <linearGradient id="dashboardRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8a4853" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#8a4853" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#8a4853" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#8a4853" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} dx={-10} tickFormatter={(val) => `${val/1000}k`} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}}
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dx={-10} tickFormatter={(val) => `${val / 1000}k`} />
+                <Tooltip
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
                 />
                 <Area type="monotone" dataKey="revenue" stroke="#8a4853" strokeWidth={4} fillOpacity={1} fill="url(#dashboardRevenue)" />
               </AreaChart>
@@ -181,7 +181,7 @@ export default function Dashboard() {
         <div className="glass-panel p-8 rounded-[2rem] border border-white/50 flex flex-col items-center text-center">
           <h3 className="font-headline-md text-xl text-primary mb-2">Boutique Inventory</h3>
           <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">STOCK QUALITY DISTRIBUTION</p>
-          
+
           <div className="flex-1 w-full flex flex-col justify-center items-center relative">
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
@@ -201,7 +201,7 @@ export default function Dashboard() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-2 w-full mt-6">
             {(brief?.categoryDistribution || []).slice(0, 4).map((stat: any) => (
               <div key={stat.name} className="flex flex-col items-center p-3 bg-white/40 rounded-2xl border border-white/60">
@@ -239,11 +239,10 @@ export default function Dashboard() {
                     <td className="px-8 py-5 font-data-tabular text-xs font-bold text-primary">{tx.receiptNumber}</td>
                     <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.cashierName}</td>
                     <td className="px-6 py-5">
-                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                        tx.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
-                        tx.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
-                        'bg-error-container/20 text-error'
-                      }`}>
+                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
+                          tx.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
+                            'bg-error-container/20 text-error'
+                        }`}>
                         {tx.status}
                       </span>
                     </td>
@@ -282,14 +281,14 @@ export default function Dashboard() {
                 ))
               ) : (
                 <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4 opacity-60">
-                   <ShieldCheck className="text-secondary mt-1" size={18} />
-                   <div>
-                     <p className="font-label-caps text-[10px] text-on-surface font-bold">ALL SYSTEMS CLEAR</p>
-                     <p className="font-body-md text-xs text-on-surface-variant">Inventory levels healthy across all ateliers.</p>
-                   </div>
+                  <ShieldCheck className="text-secondary mt-1" size={18} />
+                  <div>
+                    <p className="font-label-caps text-[10px] text-on-surface font-bold">ALL SYSTEMS CLEAR</p>
+                    <p className="font-body-md text-xs text-on-surface-variant">Inventory levels healthy across all ateliers.</p>
+                  </div>
                 </div>
               )}
-              
+
               <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
                 <ShieldCheck className="text-secondary mt-1" size={18} />
                 <div>
@@ -303,21 +302,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <div className="glass-panel p-8 rounded-[2rem] border border-secondary/20 bg-secondary-container/5 relative overflow-hidden">
-            <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-4">
-                <Star className="text-secondary" size={20} />
-                <h4 className="font-headline-md text-lg text-primary">Elite Highlight</h4>
-              </div>
-              <p className="font-body-md text-sm text-on-surface-variant mb-6">
-                Client <span className="font-bold text-primary">Isabel dos Santos</span> has reached Platinum status. Prepare invitation for the Autumn Gala.
-              </p>
-              <button className="flex items-center gap-2 text-primary font-label-caps text-[10px] font-bold group">
-                SEND INVITATION <ArrowUpRight size={14} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-              </button>
-            </div>
-            <div className="absolute top-0 right-0 w-32 h-32 bg-secondary/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
-          </div>
+
         </div>
       </div>
     </div>

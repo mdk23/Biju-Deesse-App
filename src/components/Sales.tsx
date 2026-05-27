@@ -1,5 +1,7 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+
 import React, { useState, useMemo } from 'react';
 import { 
   Plus, 
@@ -107,6 +109,7 @@ const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any
 // --- Main Component ---
 
 export default function Sales() {
+  const router = useRouter();
   const transactions = useQuery(api.transactions.list) || [];
   const brief = useQuery(api.analytics.getExecutiveBrief);
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
@@ -257,7 +260,7 @@ export default function Sales() {
             <Download size={16} /> EXPORT REPORT
           </button>
           <button 
-            onClick={() => setIsAddingSale(true)}
+            onClick={() => router.push('/pos')}
             className="flex-1 md:flex-none px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             <Plus size={16} /> NEW SALE

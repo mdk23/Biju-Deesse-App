@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 type AppShellProps = {
   children: ReactNode;
@@ -11,6 +12,7 @@ type AppShellProps = {
 export default function AppShell({ children }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const pathname = usePathname() || '/';
 
   return (
     <div className="bg-atelier-gradient min-h-screen text-on-surface font-body-md overflow-x-hidden">
@@ -24,17 +26,20 @@ export default function AppShell({ children }: AppShellProps) {
           </button>
           <span className="font-headline-md text-headline-md font-semibold text-primary tracking-tight">Biju Deesse</span>
           <div className="hidden md:flex gap-6">
-            <Link href="/" className="font-label-caps text-label-caps text-primary border-b-2 border-primary py-5">
+            <Link href="/" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
               Dashboard
             </Link>
-            <Link href="/sales" className="font-label-caps text-label-caps text-on-surface-variant hover:bg-white/20 transition-colors py-5 px-2">
-              Sales
+            <Link href="/pos" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/pos' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
+              POS
             </Link>
-            <Link href="/inventory" className="font-label-caps text-label-caps text-on-surface-variant hover:bg-white/20 transition-colors py-5 px-2">
+            <Link href="/inventory" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/inventory' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
               Inventory
             </Link>
-            <Link href="/customers" className="font-label-caps text-label-caps text-on-surface-variant hover:bg-white/20 transition-colors py-5 px-2">
+            <Link href="/customers" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/customers' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
               Customers
+            </Link>
+            <Link href="/sales" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/sales' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
+              Sales
             </Link>
           </div>
         </div>
