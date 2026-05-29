@@ -152,12 +152,29 @@ export default function Inventory() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [products]);
 
-  const agingData = [
-    { name: '0-30 Days', value: 45 },
-    { name: '31-60 Days', value: 25 },
-    { name: '61-90 Days', value: 15 },
-    { name: '90+ Days', value: 15 },
-  ];
+  const agingData = useMemo(() => {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    let bucket0_30 = 0;
+    let bucket31_60 = 0;
+    let bucket61_90 = 0;
+    let bucket90plus = 0;
+
+    products.forEach((p) => {
+      const ageInDays = Math.floor((now - p._creationTime) / DAY);
+      if (ageInDays <= 30) bucket0_30++;
+      else if (ageInDays <= 60) bucket31_60++;
+      else if (ageInDays <= 90) bucket61_90++;
+      else bucket90plus++;
+    });
+
+    return [
+      { name: '0-30 Days', value: bucket0_30 },
+      { name: '31-60 Days', value: bucket31_60 },
+      { name: '61-90 Days', value: bucket61_90 },
+      { name: '90+ Days', value: bucket90plus },
+    ];
+  }, [products]);
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -402,7 +419,9 @@ export default function Inventory() {
             </ResponsiveContainer>
           </div>
           <p className="mt-4 font-body-md text-[10px] text-on-surface-variant text-center italic">
-            * 15% of inventory has exceeded the 90-day retention threshold.
+            {products.length > 0
+              ? `* ${Math.round((agingData[3].value / products.length) * 100)}% of inventory has exceeded the 90-day retention threshold.`
+              : '* No inventory data available.'}
           </p>
         </div>
       </div>
