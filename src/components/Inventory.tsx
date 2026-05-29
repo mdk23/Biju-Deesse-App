@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { 
-  Plus, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  AlertTriangle, 
-  TrendingUp, 
-  Box, 
-  DollarSign, 
+import {
+  Plus,
+  ArrowUpRight,
+  ArrowDownRight,
+  AlertTriangle,
+  TrendingUp,
+  Box,
+  DollarSign,
   Clock,
   ChevronRight,
   Filter,
@@ -25,16 +25,16 @@ import {
   Tag,
   Gem
 } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  PieChart, 
-  Pie, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
   Cell,
   Legend
 } from 'recharts';
@@ -87,11 +87,11 @@ const StatCard = ({ title, value, subValue, icon: Icon, trend, color }: any) => 
     </div>
     <p className="font-body-md text-xs text-on-surface-variant mt-1">{subValue}</p>
     <div className="mt-4 h-1 w-full bg-white/20 rounded-full overflow-hidden">
-      <motion.div 
+      <motion.div
         initial={{ width: 0 }}
         animate={{ width: '70%' }}
         transition={{ duration: 1, delay: 0.2 }}
-        className={`h-full bg-${color}`} 
+        className={`h-full bg-${color}`}
       />
     </div>
   </div>
@@ -160,8 +160,8 @@ export default function Inventory() {
   ];
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         p.code.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
@@ -257,7 +257,7 @@ export default function Inventory() {
               <span className="font-data-tabular text-sm text-on-surface-variant">2 mins ago</span>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => setIsAddingProduct(true)}
             className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
@@ -268,39 +268,39 @@ export default function Inventory() {
 
       {/* Stats Dashboard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
-        <StatCard 
-          title="TOTAL STOCK VALUE" 
-          value={analytics ? `${analytics.totalStockValue.toLocaleString()} Mt` : "..."} 
+        <StatCard
+          title="TOTAL STOCK VALUE"
+          value={analytics ? `${analytics.totalStockValue.toLocaleString()} Mt` : "..."}
           subValue={`Valuation of ${products.length} active pieces`}
           icon={DollarSign}
           trend={analytics?.valuationTrend}
           color="primary"
         />
-        <StatCard 
-          title="LOW STOCK ITEMS" 
-          value={analytics ? analytics.lowStockCount : "..."} 
+        <StatCard
+          title="LOW STOCK ITEMS"
+          value={analytics ? analytics.lowStockCount : "..."}
           subValue="Requires immediate action"
           icon={AlertTriangle}
           trend={analytics?.lowStockTrend}
           color="secondary"
         />
-        <StatCard 
-          title="OUT OF STOCK" 
-          value={analytics ? analytics.outOfStockCount : "..."} 
+        <StatCard
+          title="OUT OF STOCK"
+          value={analytics ? analytics.outOfStockCount : "..."}
           subValue="Lost revenue potential"
           icon={Box}
           color="error"
         />
-        <StatCard 
-          title="DEAD STOCK" 
-          value={analytics ? analytics.deadStockCount : "..."} 
+        <StatCard
+          title="DEAD STOCK"
+          value={analytics ? analytics.deadStockCount : "..."}
           subValue="Idle capital > 180 days"
           icon={Clock}
           color="outline"
         />
-        <StatCard 
-          title="FAST MOVING" 
-          value={analytics ? analytics.fastMovingProducts.length : "..."} 
+        <StatCard
+          title="FAST MOVING"
+          value={analytics ? analytics.fastMovingProducts.length : "..."}
           subValue="Top performers this month"
           icon={TrendingUp}
           trend={18}
@@ -349,8 +349,8 @@ export default function Inventory() {
               <p className="font-label-caps text-[9px] text-outline">TOTAL VOLUME BY TYPE</p>
             </div>
           </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-48 w-full min-h-[192px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
                 <Pie
                   data={categoryDistribution}
@@ -387,13 +387,13 @@ export default function Inventory() {
               <p className="font-label-caps text-[9px] text-outline">STOCK RETENTION PERIOD</p>
             </div>
           </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-48 w-full min-h-[192px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={agingData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} />
                 <YAxis hide />
-                <Tooltip 
+                <Tooltip
                   cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                 />
@@ -414,8 +414,8 @@ export default function Inventory() {
             <h4 className="font-headline-md text-xl text-primary whitespace-nowrap">Product Catalog</h4>
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Search SKU or Name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -424,8 +424,8 @@ export default function Inventory() {
             </div>
           </div>
           <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-            {['All', 'Rings', 'Necklaces', 'Bracelets', 'Watches'].map(cat => (
-              <button 
+            {['All', 'Earrings', 'Bracelets', 'Charms', 'Piercings', 'Necklaces', 'Necklace & Earring Sets', 'Watches', 'Rings'].map(cat => (
+              <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
                 className={`px-4 py-1.5 rounded-full font-label-caps text-[10px] transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-primary text-on-primary' : 'bg-white/60 text-primary border border-primary/20 hover:bg-primary/5'}`}
@@ -451,8 +451,8 @@ export default function Inventory() {
             </thead>
             <tbody className="divide-y divide-primary/5">
               {filteredProducts.map((product) => (
-                <tr 
-                  key={product._id} 
+                <tr
+                  key={product._id}
                   className="hover:bg-white/50 transition-colors group cursor-pointer"
                   onClick={() => setSelectedProduct(product)}
                 >
@@ -485,23 +485,22 @@ export default function Inventory() {
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      product.stock > product.reorderLevel ? 'bg-secondary-container/20 text-secondary' :
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${product.stock > product.reorderLevel ? 'bg-secondary-container/20 text-secondary' :
                       product.stock > 0 ? 'bg-primary-fixed/30 text-primary' :
-                      'bg-error-container/30 text-error'
-                    }`}>
+                        'bg-error-container/30 text-error'
+                      }`}>
                       {product.stock > product.reorderLevel ? 'In Stock' : (product.stock > 0 ? 'Low Stock' : 'Out of Stock')}
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end gap-2">
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); handleOpenEdit(product); }}
                         className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
                       >
                         <History size={16} />
                       </button>
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); setSelectedProduct(product); }}
                         className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
                       >
@@ -527,14 +526,14 @@ export default function Inventory() {
       <AnimatePresence>
         {selectedProduct && (
           <div className="fixed inset-0 z-[60] flex items-center justify-end p-0 md:p-6">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedProduct(null)}
               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -556,7 +555,7 @@ export default function Inventory() {
                     </div>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setSelectedProduct(null)}
                   className="p-2 hover:bg-primary/5 rounded-full text-outline transition-colors"
                 >
@@ -692,13 +691,13 @@ export default function Inventory() {
                 </div>
 
                 <div className="flex gap-4 pt-6 border-t border-outline-variant/30">
-                  <button 
+                  <button
                     onClick={() => handleOpenEdit(selectedProduct)}
                     className="flex-1 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
                   >
                     <History size={16} /> Edit Piece Details
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(selectedProduct._id)}
                     className="flex-1 py-4 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all uppercase tracking-widest"
                   >
@@ -714,14 +713,14 @@ export default function Inventory() {
       <AnimatePresence>
         {isAddingProduct && (
           <div className="fixed inset-0 z-[100] flex items-center justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAddingProduct(false)}
               className="absolute inset-0 bg-black/20 backdrop-blur-md"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -730,13 +729,13 @@ export default function Inventory() {
             >
               {/* Drawer Header */}
               <div className="p-8 pb-12 bg-atelier-gradient relative">
-                <button 
+                <button
                   onClick={() => setIsAddingProduct(false)}
                   className="absolute top-6 right-6 p-2 bg-white/40 backdrop-blur-md rounded-full text-primary hover:bg-white transition-all shadow-sm"
                 >
                   <X size={20} />
                 </button>
-                
+
                 <div className="flex flex-col items-center text-center mt-4">
                   <div className="w-20 h-20 bg-white/40 backdrop-blur-md rounded-3xl border-2 border-white flex items-center justify-center text-primary shadow-xl mb-4 group cursor-pointer hover:bg-white transition-all">
                     <Camera size={32} className="group-hover:scale-110 transition-transform" />
@@ -760,22 +759,22 @@ export default function Inventory() {
                     <div className="grid grid-cols-3 gap-4">
                       <div className="col-span-2 space-y-1.5">
                         <label className="font-label-caps text-[9px] text-outline ml-1">PIECE NAME</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="e.g. Diamond Drop Earrings"
                           value={formData.name}
-                          onChange={(e) => setFormData({...formData, name: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                           required
                         />
                       </div>
                       <div className="space-y-1.5">
                         <label className="font-label-caps text-[9px] text-outline ml-1">PIECE CODE (SKU)</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="VAULT-..."
                           value={formData.code}
-                          onChange={(e) => setFormData({...formData, code: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                           className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-xs font-bold text-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                           required
                         />
@@ -784,25 +783,28 @@ export default function Inventory() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="font-label-caps text-[9px] text-outline ml-1">CATEGORY</label>
-                        <select 
+                        <select
                           value={formData.category}
-                          onChange={(e) => setFormData({...formData, category: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                           className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-xs font-bold text-primary focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm appearance-none"
                         >
-                          <option value="Rings">RINGS</option>
-                          <option value="Necklaces">NECKLACES</option>
-                          <option value="Bracelets">BRACELETS</option>
-                          <option value="Watches">WATCHES</option>
                           <option value="Earrings">EARRINGS</option>
+                          <option value="Bracelets">BRACELETS</option>
+                          <option value="Charms">CHARMS</option>
+                          <option value="Piercings">PIERCINGS</option>
+                          <option value="Necklaces">NECKLACES</option>
+                          <option value="Necklace & Earring Sets">NECKLACE & EARRING SETS</option>
+                          <option value="Watches">WATCHES</option>
+                          <option value="Rings">RINGS</option>
                         </select>
                       </div>
                       <div className="space-y-1.5">
                         <label className="font-label-caps text-[9px] text-outline ml-1">PIECE DESCRIPTION</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="Brief stylistic details"
                           value={formData.description}
-                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                           className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                         />
                       </div>
@@ -816,29 +818,19 @@ export default function Inventory() {
                     <div className="w-1 h-4 bg-secondary rounded-full"></div>
                     <h4 className="font-label-caps text-[11px] text-secondary tracking-widest">JEWELRY SPECIFICATIONS</h4>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <div className="space-y-1.5">
-                      <label className="font-label-caps text-[9px] text-outline ml-1">GOLD PURITY / MATERIAL</label>
+                      <label className="font-label-caps text-[9px] text-outline ml-1">MATERIAL</label>
                       <div className="relative">
                         <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="e.g. 18K Rose Gold"
                           className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="font-label-caps text-[9px] text-outline ml-1">GEMSTONE DETAILS</label>
-                      <div className="relative">
-                        <Gem className="absolute left-4 top-1/2 -translate-y-1/2 text-outline" size={16} />
-                        <input 
-                          type="text" 
-                          placeholder="e.g. VVS1 Diamond 0.5ct"
-                          className="w-full pl-12 pr-4 py-3 bg-white/40 border border-white/60 rounded-xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
+
                   </div>
                 </section>
 
@@ -851,22 +843,22 @@ export default function Inventory() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="font-label-caps text-[9px] text-outline ml-1">COST PRICE (Mt)</label>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         placeholder="0.00"
                         value={formData.costPrice}
-                        onChange={(e) => setFormData({...formData, costPrice: parseFloat(e.target.value) || 0})}
+                        onChange={(e) => setFormData({ ...formData, costPrice: parseFloat(e.target.value) || 0 })}
                         className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                         required
                       />
                     </div>
                     <div className="space-y-1.5">
                       <label className="font-label-caps text-[9px] text-outline ml-1">SELLING PRICE (Mt)</label>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         placeholder="0.00"
                         value={formData.sellingPrice}
-                        onChange={(e) => setFormData({...formData, sellingPrice: parseFloat(e.target.value) || 0})}
+                        onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
                         className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
                         required
                       />
@@ -886,49 +878,49 @@ export default function Inventory() {
                     <div className="w-1 h-4 bg-outline rounded-full"></div>
                     <h4 className="font-label-caps text-[11px] text-outline tracking-widest">INITIAL STOCK CONTROL</h4>
                   </div>
-                    <div className="space-y-1.5">
-                      <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">TOTAL STOCK</label>
-                      <input 
-                        type="number" 
-                        value={formData.stock}
-                        onChange={(e) => setFormData({...formData, stock: parseInt(e.target.value) || 0})}
-                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">REORDER LEVEL</label>
-                      <input 
-                        type="number" 
-                        value={formData.reorderLevel}
-                        onChange={(e) => setFormData({...formData, reorderLevel: parseInt(e.target.value) || 0})}
-                        className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col justify-center items-center">
-                      <label className="font-label-caps text-[9px] text-outline mb-2">ARCHIVED</label>
-                      <button 
-                        type="button"
-                        onClick={() => setFormData({...formData, archived: !formData.archived})}
-                        className={`w-12 h-6 rounded-full transition-colors relative ${formData.archived ? 'bg-error' : 'bg-outline-variant'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.archived ? 'left-7' : 'left-1'}`}></div>
-                      </button>
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">TOTAL STOCK</label>
+                    <input
+                      type="number"
+                      value={formData.stock}
+                      onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">REORDER LEVEL</label>
+                    <input
+                      type="number"
+                      value={formData.reorderLevel}
+                      onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm text-center focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-col justify-center items-center">
+                    <label className="font-label-caps text-[9px] text-outline mb-2">ARCHIVED</label>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, archived: !formData.archived })}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${formData.archived ? 'bg-error' : 'bg-outline-variant'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.archived ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                  </div>
                 </section>
               </form>
 
               {/* Drawer Footer Actions */}
               <div className="p-8 border-t border-outline-variant/30 bg-white/20 sticky bottom-0">
                 <div className="flex gap-4">
-                  <button 
+                  <button
                     onClick={() => setIsAddingProduct(false)}
                     className="flex-1 py-4 bg-white border border-outline-variant/30 text-outline rounded-2xl font-label-caps text-[11px] hover:bg-surface-variant transition-all uppercase tracking-widest"
                   >
                     Discard
                   </button>
-                  <button 
+                  <button
                     type="submit"
                     onClick={handleSubmit}
                     className="flex-[2] py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 uppercase tracking-widest"

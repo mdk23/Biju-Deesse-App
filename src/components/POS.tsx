@@ -207,11 +207,14 @@ export default function POS() {
           <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
             {[
               "All Collections",
-              "Rings",
-              "Necklaces",
-              "Bracelets",
-              "Watches",
               "Earrings",
+              "Bracelets",
+              "Charms",
+              "Piercings",
+              "Necklaces",
+              "Necklace & Earring Sets",
+              "Watches",
+              "Rings",
             ].map((cat) => (
               <button
                 key={cat}
