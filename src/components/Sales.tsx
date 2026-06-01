@@ -178,8 +178,8 @@ export default function Sales() {
       const totalPaid = saleForm.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
       const remainingBalance = saleTotals.total - totalPaid;
       
-      let settlementType: 'Fully Paid' | 'Partially Paid' | 'Pending' = 'Pending';
-      if (totalPaid >= saleTotals.total) settlementType = 'Fully Paid';
+      let settlementType: 'Completed' | 'Partially Paid' | 'Pending' = 'Pending';
+      if (totalPaid >= saleTotals.total) settlementType = 'Completed';
       else if (totalPaid > 0) settlementType = 'Partially Paid';
 
       if (saleForm.items.length === 0) {
@@ -188,7 +188,7 @@ export default function Sales() {
       }
 
       // Walk-in Lockdown
-      if (!saleForm.customerId && settlementType !== 'Fully Paid') {
+      if (!saleForm.customerId && settlementType !== 'Completed') {
         toast.error("Walk-in transactions must be fully paid at checkout.");
         return;
       }
@@ -203,6 +203,9 @@ export default function Sales() {
         cashierName: "System Admin", // Replace with auth user if available
         receiptNumber,
         settlementType,
+        amountReceived: totalPaid,
+        changeGiven: totalPaid > saleTotals.total ? totalPaid - saleTotals.total : 0,
+        changeMethod: totalPaid > saleTotals.total ? "Cash" : undefined,
         deliveryStatus: "Pending",
         paymentBreakdown: saleForm.paymentBreakdown,
         items: itemsForMutation,
