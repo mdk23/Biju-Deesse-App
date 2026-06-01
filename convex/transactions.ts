@@ -52,7 +52,10 @@ export const create = mutation({
     profit: v.number(),
     cashierName: v.string(),
     receiptNumber: v.string(),
-    settlementType: v.string(), // "Fully Paid", "Partially Paid", "Pending"
+    settlementType: v.string(), // "Completed", "Partially Paid", "Pending"
+    amountReceived: v.number(),
+    changeGiven: v.number(),
+    changeMethod: v.optional(v.string()),
     deliveryStatus: v.string(), // "Pending", "Shipped", "Delivered"
     paymentBreakdown: v.array(
       v.object({
@@ -74,7 +77,7 @@ export const create = mutation({
     }
 
     // Backend Validation: Settlement vs Reality
-    if (args.settlementType === "Fully Paid" && status !== "Completed") {
+    if (args.settlementType === "Completed" && status !== "Completed") {
       throw new Error("Full settlement requires total payment coverage.");
     }
     if (args.settlementType === "Partially Paid" && status !== "Partially Paid") {
@@ -85,7 +88,7 @@ export const create = mutation({
     }
 
     // Extra Validation: Walk-in must be Fully Paid
-    if (!args.customerId && args.settlementType !== "Fully Paid") {
+    if (!args.customerId && args.settlementType !== "Completed") {
       throw new Error("Walk-in transactions must be fully settled at checkout.");
     }
 
@@ -105,6 +108,9 @@ export const create = mutation({
       paymentBreakdown: args.paymentBreakdown,
       items: args.items,
       refundedAmount: 0,
+      amountReceived: args.amountReceived,
+      changeGiven: args.changeGiven,
+      changeMethod: args.changeMethod,
       notes: args.notes,
     });
 

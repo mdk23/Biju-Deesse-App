@@ -5,6 +5,7 @@ import {
   Search,
   Filter,
   PlusCircle,
+  Plus,
   Trash2,
   Printer,
   MessageCircle,
@@ -17,10 +18,13 @@ import {
   CalendarDays,
   CheckCircle2,
   User,
+  X,
 } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function POS() {
   const products = useQuery(api.products.list, { archived: false }) || [];
@@ -28,22 +32,35 @@ export default function POS() {
 
   const createTransaction = useMutation(api.transactions.create);
 
-  const [activeCategory, setActiveCategory] = useState("All Collections");
+  const [activeCategory, setActiveCategory] = useState("Earrings");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
     null,
   );
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [cart, setCart] = useState<any[]>([]);
 
-  const [isReserved, setIsReserved] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentEntries, setPaymentEntries] = useState<
+    { id: string; method: string; amount: string }[]
+  >([{ id: "1", method: "Cash", amount: "" }]);
+  const [changeMethod, setChangeMethod] = useState("Cash");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const selectedCustomer = customers.find((c) => c._id === selectedCustomerId);
 
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers.slice(0, 8);
+    return customers
+      .filter((c) =>
+        `${c.firstName} ${c.lastName}`
+          .toLowerCase()
+          .includes(customerSearch.toLowerCase()),
+      )
+      .slice(0, 8);
+  }, [customers, customerSearch]);
+
   const filteredProducts = useMemo(() => {
-    if (activeCategory === "All Collections") return products;
+    if (!activeCategory) return products;
     return products.filter((p) =>
       p.category.toLowerCase().includes(activeCategory.toLowerCase()),
     );
@@ -94,6 +111,33 @@ export default function POS() {
     return { subtotal, discount, total, profit };
   }, [cart]);
 
+  const amountReceived = useMemo(
+    () =>
+      paymentEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
+    [paymentEntries],
+  );
+
+  // Auto-derived - no manual selection needed
+  const settlementType = useMemo(() => {
+    if (amountReceived > 0 && amountReceived >= saleTotals.total) return "Completed";
+    if (amountReceived > 0 && amountReceived < saleTotals.total) return "Partially Paid";
+    return "Pending";
+  }, [amountReceived, saleTotals.total]);
+
+  const changeGiven = useMemo(
+    () =>
+      settlementType === "Completed"
+        ? Math.max(0, amountReceived - saleTotals.total)
+        : 0,
+    [settlementType, amountReceived, saleTotals.total],
+  );
+
+  const outstandingBalance = useMemo(() => {
+    if (settlementType === "Completed") return 0;
+    if (settlementType === "Pending") return saleTotals.total;
+    return Math.max(0, saleTotals.total - amountReceived);
+  }, [settlementType, amountReceived, saleTotals.total]);
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("en-MZ", { style: "currency", currency: "MZN" })
       .format(val)
@@ -101,54 +145,45 @@ export default function POS() {
 
   const handleCompleteTransaction = async () => {
     if (cart.length === 0) {
-      setErrorMessage("Your cart is empty.");
+      toast.error("Cart is empty. Add items before completing the transaction.");
       return;
     }
 
-    // Verify stock availability
+    // Stock validation
     for (const item of cart) {
       const originalProduct = products.find((p) => p._id === item.id);
       if (originalProduct && originalProduct.stock < item.quantity) {
-        setErrorMessage(
-          `Insufficient stock for ${item.name}. Available: ${originalProduct.stock}`,
+        toast.error(
+          `Insufficient stock for "${item.name}". Available: ${originalProduct.stock}`,
         );
         return;
       }
     }
 
+    // Walk-in must pay in full - overpayment is returned as change
+    if (!selectedCustomerId && amountReceived < saleTotals.total) {
+      toast.error(
+        amountReceived === 0
+          ? "Please enter the amount received before completing the transaction."
+          : `Walk-in customers must pay in full. Received ${formatCurrency(amountReceived)} of ${formatCurrency(saleTotals.total)}.`,
+      );
+      return;
+    }
+
     setIsSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
 
     try {
       const receiptNumber = `INV-${Date.now().toString().slice(-8)}`;
-      let settlementType = "Fully Paid";
-      let amountPaid = saleTotals.total;
-
-      if (isReserved) {
-        settlementType = "Pending";
-        amountPaid = 0;
-      } else if (paymentMethod === "Layby") {
-        settlementType = "Partially Paid";
-        // Default layby deposit is 30%
-        amountPaid = Math.round(saleTotals.total * 0.3);
-      }
-
-      // Enforce Walk-in rules: must be fully settled
-      if (!selectedCustomerId && settlementType !== "Fully Paid") {
-        settlementType = "Fully Paid";
-        amountPaid = saleTotals.total;
-      }
 
       const paymentBreakdown =
-        amountPaid > 0
-          ? [
-            {
-              method: paymentMethod,
-              amount: amountPaid,
-            },
-          ]
-          : [];
+        settlementType === "Pending"
+          ? []
+          : paymentEntries
+              .filter((e) => parseFloat(e.amount) > 0)
+              .map((e) => ({
+                method: e.method,
+                amount: parseFloat(e.amount),
+              }));
 
       await createTransaction({
         customerId: (selectedCustomerId as Id<"customers">) || undefined,
@@ -159,23 +194,27 @@ export default function POS() {
         })),
         subtotal: saleTotals.subtotal,
         discount: saleTotals.discount,
-        taxes: saleTotals.total * 0.17, // VAT
+        taxes: 0,
         total: saleTotals.total,
         profit: saleTotals.profit,
         cashierName: "Biju Cashier",
         receiptNumber,
         settlementType,
-        deliveryStatus: isReserved ? "Pending" : "Delivered",
+        amountReceived: settlementType === "Pending" ? 0 : amountReceived,
+        changeGiven,
+        changeMethod: changeGiven > 0 ? changeMethod : undefined,
+        deliveryStatus: settlementType === "Pending" ? "Pending" : "Delivered",
         paymentBreakdown,
-        notes: isReserved ? "Reservation hold" : undefined,
       });
 
-      setSuccessMessage(`Transaction ${receiptNumber} completed successfully!`);
+      toast.success(`Transaction ${receiptNumber} completed!`);
       setCart([]);
-      setIsReserved(false);
+      setPaymentEntries([{ id: "1", method: "Cash", amount: "" }]);
+      setSelectedCustomerId(null);
+      setCustomerSearch("");
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || "Failed to complete transaction.");
+      toast.error(err.message || "Failed to complete transaction.");
     } finally {
       setIsSubmitting(false);
     }
@@ -206,7 +245,6 @@ export default function POS() {
 
           <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
             {[
-              "All Collections",
               "Earrings",
               "Bracelets",
               "Charms",
@@ -218,7 +256,7 @@ export default function POS() {
             ].map((cat) => (
               <button
                 key={cat}
-                onClick={() => setActiveCategory(cat)}
+                onClick={() => setActiveCategory(activeCategory === cat ? "" : cat)}
                 className={`px-4 py-2 rounded-full font-label-caps text-[10px] whitespace-nowrap transition-all border ${activeCategory === cat
                   ? "bg-primary text-white border-primary shadow-md"
                   : "bg-white/40 border-white/50 text-on-surface-variant hover:bg-white/60"
@@ -290,26 +328,12 @@ export default function POS() {
       <aside className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-6">
         {/* Customer Integration */}
         <div className="bg-white/40 backdrop-blur-md p-6 rounded-xl shadow-sm border border-white/50 shrink-0">
-          <div className="flex justify-between items-center mb-6">
-            <h4 className="font-label-caps text-label-caps text-on-surface-variant">
-              Customer Profile
-            </h4>
-            <div className="flex bg-surface-container p-1 rounded-lg">
-              <select
-                className="w-full bg-transparent text-xs font-bold focus:ring-0 outline-none p-1 text-primary"
-                value={selectedCustomerId || ""}
-                onChange={(e) => setSelectedCustomerId(e.target.value || null)}
-              >
-                <option value="">Walk-in Customer</option>
-                {customers.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.firstName} {c.lastName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 p-4 bg-primary/5 rounded-lg border border-primary/10">
+          <h4 className="font-label-caps text-label-caps text-on-surface-variant mb-4">
+            Customer Profile
+          </h4>
+
+          {/* Selected customer / walk-in card */}
+          <div className="flex items-center gap-4 p-4 bg-primary/5 rounded-lg border border-primary/10 mb-4">
             <div className="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center text-white font-bold text-xl">
               {selectedCustomer ? (
                 selectedCustomer.firstName.charAt(0)
@@ -327,16 +351,84 @@ export default function POS() {
                 Tier: {selectedCustomer ? selectedCustomer.loyaltyTier : "N/A"}
               </p>
             </div>
+            {selectedCustomer && (
+              <button
+                onClick={() => {
+                  setSelectedCustomerId(null);
+                  setCustomerSearch("");
+                }}
+                className="p-1 text-outline hover:text-error transition-colors"
+                title="Switch to Walk-in"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
 
+          {/* Client search */}
+          <div className="relative">
+            <div className="flex items-center gap-2 bg-surface-container rounded-lg px-3 py-2.5 border border-outline-variant/30 focus-within:border-primary transition-colors">
+              <Search size={14} className="text-outline flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Search client by name..."
+                className="flex-1 bg-transparent text-xs outline-none text-on-surface placeholder:text-outline/50"
+                value={customerSearch}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value);
+                  setShowCustomerDropdown(true);
+                }}
+                onFocus={() => setShowCustomerDropdown(true)}
+                onBlur={() =>
+                  setTimeout(() => setShowCustomerDropdown(false), 150)
+                }
+              />
+              {customerSearch && (
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setCustomerSearch("");
+                    setShowCustomerDropdown(false);
+                  }}
+                  className="text-outline hover:text-error transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            {showCustomerDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl border border-outline-variant/20 z-20 max-h-44 overflow-y-auto">
+                {filteredCustomers.length > 0 ? (
+                  filteredCustomers.map((c) => (
+                    <button
+                      key={c._id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSelectedCustomerId(c._id);
+                        setCustomerSearch(`${c.firstName} ${c.lastName}`);
+                        setShowCustomerDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs hover:bg-primary/5 transition-colors border-b border-outline-variant/10 last:border-0"
+                    >
+                      <span className="font-bold text-on-surface">
+                        {c.firstName} {c.lastName}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-4 py-3 text-xs text-outline">No clients found</p>
+                )}
+              </div>
+            )}
           </div>
-          <div className="mt-4 flex gap-2">
-            <button
-              className="flex-1 py-2 text-[10px] font-bold border border-outline-variant/30 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
-              disabled={!selectedCustomer}
-            >
-              PURCHASE HISTORY
-            </button>
-          </div>
+
+          {selectedCustomer && (
+            <div className="mt-4">
+              <button className="w-full py-2 text-[10px] font-bold border border-outline-variant/30 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                PURCHASE HISTORY
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Transaction Cart */}
@@ -344,17 +436,6 @@ export default function POS() {
           className="bg-white/40 backdrop-blur-md rounded-xl shadow-sm border border-white/50 flex flex-col shrink-0"
           style={{ height: "500px" }}
         >
-          <div className="p-6 border-b border-outline-variant/20 flex justify-between items-center">
-            <h4 className="font-label-caps text-label-caps text-on-surface-variant">
-              Current Cart ({cart.length})
-            </h4>
-            <button
-              onClick={() => setCart([])}
-              className="text-error text-xs font-bold hover:underline"
-            >
-              Clear All
-            </button>
-          </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {cart.map((item) => (
@@ -440,18 +521,6 @@ export default function POS() {
                 {formatCurrency(saleTotals.subtotal)}
               </span>
             </div>
-            <div className="flex justify-between items-center text-[12px] font-bold text-on-surface-variant/70">
-              <span>Discount</span>
-              <span className="font-data-tabular text-primary">
-                -{formatCurrency(saleTotals.discount)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-[12px] font-bold text-on-surface-variant/70">
-              <span>VAT (17%)</span>
-              <span className="font-data-tabular">
-                {formatCurrency(saleTotals.total * 0.17)}
-              </span>
-            </div>
             <div className="flex justify-between items-center pt-2 mt-2 border-t border-outline-variant/30">
               <span className="font-label-caps text-primary text-base">
                 TOTAL DUE
@@ -464,63 +533,182 @@ export default function POS() {
         </div>
 
         {/* Payment & Actions */}
-        <div className="bg-white/40 backdrop-blur-md p-6 rounded-xl shadow-sm border border-white/50 flex flex-col gap-6 shrink-0">
-          {successMessage && (
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-lg text-xs font-bold text-center">
-              {successMessage}
-            </div>
-          )}
-          {errorMessage && (
-            <div className="p-3 bg-error/10 border border-error/20 text-error rounded-lg text-xs font-bold text-center">
-              {errorMessage}
-            </div>
-          )}
+        <div className="bg-white/40 backdrop-blur-md p-6 rounded-xl shadow-sm border border-white/50 flex flex-col gap-5 shrink-0">
 
-          <div>
-            <h4 className="font-label-caps text-label-caps text-on-surface-variant mb-4">
-              Payment Method
+          {/* Payment Methods */}
+          <div className="space-y-2.5">
+            <h4 className="font-label-caps text-label-caps text-on-surface-variant mb-1">
+              Payment Methods
             </h4>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "CASH", value: "Cash", icon: Banknote },
-                { label: "BCI", value: "BCI", icon: Landmark },
-                { label: "BIM", value: "BIM", icon: Landmark },
-                { label: "M-PESA", value: "M-Pesa", icon: Smartphone },
-                { label: "E-MOLA", value: "e-Mola", icon: Smartphone },
-                { label: "CONTA MOVEL", value: "Conta Movel", icon: Smartphone },
-              ].map((method) => {
-                const IconComponent = method.icon;
-                const isActive = paymentMethod === method.value;
-                return (
-                  <button
-                    key={method.value}
-                    onClick={() => setPaymentMethod(method.value)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-colors ${isActive
-                      ? "border-2 border-primary bg-primary/5 text-primary"
-                      : "border-outline-variant/30 bg-white/50 hover:bg-white text-on-surface-variant"
-                      }`}
+            <AnimatePresence mode="popLayout">
+              {paymentEntries.map((entry) => (
+                <motion.div
+                  key={entry.id}
+                  layout
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  className="flex gap-2 items-center"
+                >
+                  <select
+                    value={entry.method}
+                    onChange={(e) =>
+                      setPaymentEntries((prev) =>
+                        prev.map((p) =>
+                          p.id === entry.id
+                            ? { ...p, method: e.target.value }
+                            : p,
+                        ),
+                      )
+                    }
+                    className="bg-surface-container border border-outline-variant/30 rounded-lg px-2 py-2 text-[11px] font-bold text-primary outline-none w-28 flex-shrink-0 cursor-pointer"
                   >
-                    <IconComponent size={20} className="mb-1" />
-                    <span className="text-[10px] font-bold">{method.label}</span>
-                  </button>
-                );
-              })}
+                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel"].map(
+                      (m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-outline pointer-events-none">
+                      Mt
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={entry.amount}
+                      onChange={(e) =>
+                        setPaymentEntries((prev) =>
+                          prev.map((p) =>
+                            p.id === entry.id
+                              ? { ...p, amount: e.target.value }
+                              : p,
+                          ),
+                        )
+                      }
+                      className="w-full pl-9 pr-3 py-2 bg-surface-container border border-outline-variant/30 rounded-lg text-sm font-bold text-on-surface outline-none focus:border-primary transition-colors"
+                    />
+                  </div>
+                  {paymentEntries.length > 1 && (
+                    <button
+                      onClick={() =>
+                        setPaymentEntries((prev) =>
+                          prev.filter((p) => p.id !== entry.id),
+                        )
+                      }
+                      className="p-1.5 text-outline hover:text-error transition-colors flex-shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {paymentEntries.length < 6 && (
+              <button
+                onClick={() =>
+                  setPaymentEntries((prev) => [
+                    ...prev,
+                    { id: Date.now().toString(), method: "Cash", amount: "" },
+                  ])
+                }
+                className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:opacity-70 transition-opacity mt-1"
+              >
+                <Plus size={12} />
+                ADD PAYMENT METHOD
+              </button>
+            )}
+          </div>
+
+          {/* Payment Summary */}
+          <div className="bg-gradient-to-br from-primary/8 to-primary/3 border border-primary/15 rounded-xl p-4 space-y-2">
+            <div className="flex items-center justify-between mb-1">
+              <p className="font-label-caps text-[9px] text-on-surface-variant tracking-widest">
+                PAYMENT SUMMARY
+              </p>
+              {amountReceived > 0 && (
+                <span
+                  className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${
+                    settlementType === "Completed"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : settlementType === "Partially Paid"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-rose-100 text-rose-700"
+                  }`}
+                >
+                  {settlementType.toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-on-surface-variant">Invoice Total</span>
+              <span className="font-bold text-on-surface font-data-tabular">
+                {formatCurrency(saleTotals.total)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-on-surface-variant">Amount Received</span>
+              <span
+                className={`font-bold font-data-tabular transition-colors ${
+                  amountReceived > 0 ? "text-emerald-600" : "text-outline/60"
+                }`}
+              >
+                {formatCurrency(amountReceived)}
+              </span>
+            </div>
+            {changeGiven > 0 && (
+              <>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-on-surface-variant">Change Given</span>
+                  <span className="font-bold text-amber-600 font-data-tabular">
+                    {formatCurrency(changeGiven)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-on-surface-variant">Change Method</span>
+                  <select
+                    value={changeMethod}
+                    onChange={(e) => setChangeMethod(e.target.value)}
+                    className="bg-transparent border border-outline-variant/30 rounded px-1 py-0.5 text-[10px] font-bold text-primary outline-none cursor-pointer"
+                  >
+                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel"].map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            {outstandingBalance > 0 && amountReceived > 0 && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-on-surface-variant">Outstanding Balance</span>
+                <span className="font-bold text-rose-600 font-data-tabular">
+                  {formatCurrency(outstandingBalance)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between items-center pt-2 mt-1 border-t border-primary/15">
+              <span className="font-label-caps text-label-caps text-primary">
+                Total Due
+              </span>
+              <span className="font-headline-md text-2xl text-primary">
+                {formatCurrency(saleTotals.total)}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <button
-              onClick={handleCompleteTransaction}
-              disabled={isSubmitting || cart.length === 0}
-              className="w-full py-4 bg-primary text-white font-bold text-label-caps tracking-widest rounded-lg shadow-lg hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "PROCESSING..." : "COMPLETE TRANSACTION"}
-            </button>
-
-
-
-
-          </div>
+          {/* Finalize */}
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={handleCompleteTransaction}
+            disabled={isSubmitting || cart.length === 0}
+            className="w-full py-4 bg-primary text-white font-bold text-label-caps tracking-widest rounded-lg shadow-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? "PROCESSING..." : "COMPLETE TRANSACTION"}
+          </motion.button>
         </div>
       </aside>
     </div>

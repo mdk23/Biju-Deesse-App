@@ -58,6 +58,9 @@ export default defineSchema({
       })
     ),
     refundedAmount: v.number(),
+    amountReceived: v.optional(v.number()),
+    changeGiven: v.optional(v.number()),
+    changeMethod: v.optional(v.string()),
     notes: v.optional(v.string()),
   }).index("by_receipt", ["receiptNumber"])
     .index("by_customer", ["customerId"]),
