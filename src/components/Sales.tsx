@@ -111,7 +111,7 @@ const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any
 export default function Sales() {
   const router = useRouter();
   const transactions = useQuery(api.transactions.list) || [];
-  const brief = useQuery(api.analytics.getExecutiveBrief);
+  const brief = useQuery(api.analytics.getExecutiveBrief, {});
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
   const customers = useQuery(api.customers.list) || [];
   const products = useQuery(api.products.list, { archived: false }) || [];
