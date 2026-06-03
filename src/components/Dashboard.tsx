@@ -67,10 +67,43 @@ const ExecutiveKPI = ({ title, value, trend, icon: Icon, color, subText }: any) 
 // --- Main Component ---
 
 export default function Dashboard() {
-  const brief = useQuery(api.analytics.getExecutiveBrief);
+  const [period, setPeriod] = useState<'today' | 'yesterday' | 'this_week'>('today');
+  const brief = useQuery(api.analytics.getExecutiveBrief, { period });
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
   const recentTransactions = useQuery(api.transactions.list);
   const lowStock = useQuery(api.products.getLowStock);
+
+  const filteredRecentTransactions = (recentTransactions || []).filter(tx => {
+    const txTime = tx._creationTime;
+    const now = new Date();
+
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayTimestamp = startOfToday.getTime();
+
+    const startOfYesterday = new Date(now);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    startOfYesterday.setHours(0, 0, 0, 0);
+    const yesterdayTimestamp = startOfYesterday.getTime();
+
+    const startOfThisWeek = new Date(now);
+    const day = startOfThisWeek.getDay();
+    const diff = startOfThisWeek.getDate() - day + (day === 0 ? -6 : 1);
+    startOfThisWeek.setDate(diff);
+    startOfThisWeek.setHours(0, 0, 0, 0);
+    const thisWeekTimestamp = startOfThisWeek.getTime();
+
+    if (period === 'today') {
+      return txTime >= todayTimestamp;
+    }
+    if (period === 'yesterday') {
+      return txTime >= yesterdayTimestamp && txTime < todayTimestamp;
+    }
+    if (period === 'this_week') {
+      return txTime >= thisWeekTimestamp;
+    }
+    return true;
+  });
 
   // Formatting helpers
   const formatCurrency = (val: number) =>
@@ -93,21 +126,26 @@ export default function Dashboard() {
         </motion.div>
 
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="hidden lg:flex flex-col items-end px-6 border-r border-outline-variant/30">
-            <span className="font-label-caps text-[10px] text-outline tracking-tighter">ESTIMATED VALUATION</span>
-            <span className="font-data-tabular text-xl font-bold text-primary tracking-tight">
-              {brief ? formatCurrency(brief.estimatedValuation) : '---'}
-            </span>
+          <div className="flex items-center gap-2 bg-white/40 backdrop-blur-md p-1.5 rounded-2xl border border-white/60 shadow-sm mr-2">
+            {[
+              { label: 'TODAY', value: 'today' },
+              { label: 'YESTERDAY', value: 'yesterday' },
+              { label: 'THIS WEEK', value: 'this_week' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value as any)}
+                className={`px-4 py-2 font-label-caps text-[10px] rounded-xl transition-all ${period === opt.value
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-primary hover:bg-primary/5'
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-          <button className="flex-1 md:flex-none p-4 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-white transition-all shadow-sm">
-            <Bell size={20} />
-          </button>
-          <button
-            onClick={() => toast.info("New Acquisition stream coming soon to operational intelligence")}
-            className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
-          >
-            <Plus size={18} /> NEW ACQUISITION
-          </button>
+
+
         </div>
       </div>
 
@@ -116,7 +154,7 @@ export default function Dashboard() {
         <ExecutiveKPI
           title="TOTAL REVENUE"
           value={brief ? formatCurrency(brief.totalRevenue) : '...'}
-          trend={12.5}
+          trend={brief?.trends?.revenue || 0}
           icon={ShoppingBag}
           color="primary"
           subText="Gross revenue across all pieces"
@@ -124,63 +162,75 @@ export default function Dashboard() {
         <ExecutiveKPI
           title="TOTAL PROFIT"
           value={brief ? formatCurrency(brief.totalProfit) : '...'}
-          trend={8.2}
+          trend={brief?.trends?.profit || 0}
           icon={TrendingUp}
           color="secondary"
           subText="Net earnings after costs"
         />
         <ExecutiveKPI
-          title="ACTIVE CLIENTS"
-          value={brief ? brief.activeClients.toString() : '...'}
-          trend={5.4}
-          icon={Users}
+          title="TOTAL PENDING"
+          value={brief ? formatCurrency(brief.totalPending) : '...'}
+          trend={brief?.trends?.pending || 0}
+          icon={CreditCard}
           color="tertiary"
-          subText="Managed within Luxury CRM"
+          subText="Outstanding client balances"
         />
         <ExecutiveKPI
-          title="BOUTIQUE REACH"
-          value="14.2%"
-          trend={-2.1}
+          title="AVERAGE SALES"
+          value={brief ? formatCurrency(brief.avgSales) : '...'}
+          trend={brief?.trends?.avgSales || 0}
           icon={Zap}
           color="primary"
-          subText="Local luxury market share"
+          subText="Average transaction value"
         />
       </div>
 
       {/* Central Revenue Command & Category Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-        <div className="lg:col-span-2 glass-panel p-8 rounded-[2rem] border border-white/50 relative overflow-hidden">
-          <div className="flex justify-between items-start mb-10 relative z-10">
-            <div>
-              <h3 className="font-headline-md text-2xl text-primary">Revenue Command Center</h3>
-              <p className="font-label-caps text-[10px] text-outline tracking-widest">WEEKLY PERFORMANCE OVERVIEW</p>
-            </div>
+        <div className="lg:col-span-2 space-y-6">
+          <div>
+            <h3 className="font-headline-md text-2xl text-primary">Payment Channels</h3>
+            <p className="font-label-caps text-[10px] text-outline tracking-widest">TRANSACTION VOLUME BY PAYMENT METHOD</p>
           </div>
-
-          <div className="h-80 w-full relative z-10">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueHistory || []}>
-                <defs>
-                  <linearGradient id="dashboardRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8a4853" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#8a4853" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dx={-10} tickFormatter={(val) => `${val / 1000}k`} />
-                <Tooltip
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="#8a4853" strokeWidth={4} fillOpacity={1} fill="url(#dashboardRevenue)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+            {[
+              { name: 'M-Pesa', key: 'M-Pesa', color: 'primary', icon: CreditCard },
+              { name: 'e-Mola', key: 'e-Mola', color: 'secondary', icon: CreditCard },
+              { name: 'BCI', key: 'BCI', color: 'tertiary', icon: CreditCard },
+              { name: 'BIM Cash', key: 'BIM Cash', color: 'primary', icon: CreditCard },
+              { name: 'Card', key: 'Card', color: 'secondary', icon: CreditCard },
+              { name: 'Cash', key: 'Cash', color: 'tertiary', icon: CreditCard },
+            ].map((pm) => {
+              const methodData = (brief?.paymentMethods as any)?.[pm.key] || { amount: 0, count: 0, percentage: 0 };
+              return (
+                <motion.div
+                  key={pm.name}
+                  whileHover={{ scale: 1.02 }}
+                  className="glass-panel p-6 rounded-3xl border border-white/50 relative overflow-hidden group hover:shadow-xl transition-all flex flex-col justify-between min-h-[160px]"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className={`p-3 rounded-2xl bg-${pm.color}/10 text-${pm.color} shadow-sm w-fit`}>
+                      <pm.icon size={20} />
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/5 text-primary border border-primary/10">
+                      {methodData.percentage}% share
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-label-caps text-[10px] text-outline tracking-widest uppercase mb-1">{pm.name}</p>
+                    <h4 className="font-headline-md text-lg text-primary mb-1">{formatCurrency(methodData.amount)}</h4>
+                    <p className="font-body-md text-[10px] text-on-surface-variant opacity-75">{methodData.count} transactions</p>
+                  </div>
+                  <div className={`absolute bottom-0 left-0 h-1 w-full bg-${pm.color}/20 group-hover:bg-${pm.color}/40 transition-colors`}></div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
 
         <div className="glass-panel p-8 rounded-[2rem] border border-white/50 flex flex-col items-center text-center">
           <h3 className="font-headline-md text-xl text-primary mb-2">Boutique Inventory</h3>
-          <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">STOCK QUALITY DISTRIBUTION</p>
+          <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">SOLD CATEGORY DISTRIBUTION</p>
 
           <div className="flex-1 w-full flex flex-col justify-center items-center relative">
             <ResponsiveContainer width="100%" height={260}>
@@ -219,8 +269,8 @@ export default function Dashboard() {
         <div className="lg:col-span-2 glass-panel rounded-[2rem] border border-white/50 bg-white/20">
           <div className="p-8 border-b border-primary/10 flex justify-between items-center bg-white/40 rounded-t-[2rem]">
             <div>
-              <h3 className="font-headline-md text-xl text-primary">Global Activity</h3>
-              <p className="font-label-caps text-[9px] text-outline tracking-widest">REAL-TIME TRANSACTION STREAM</p>
+              <h3 className="font-headline-md text-xl text-primary">Sales Activity</h3>
+              <p className="font-label-caps text-[9px] text-outline tracking-widest">REAL-TIME TRANSACTION  </p>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -234,14 +284,14 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-primary/5">
-                {(recentTransactions || []).slice(0, 5).map((tx) => (
+                {(filteredRecentTransactions || []).slice(0, 5).map((tx) => (
                   <tr key={tx._id} className="hover:bg-white/40 transition-colors group cursor-pointer">
                     <td className="px-8 py-5 font-data-tabular text-xs font-bold text-primary">{tx.receiptNumber}</td>
                     <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.cashierName}</td>
                     <td className="px-6 py-5">
                       <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
-                          tx.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
-                            'bg-error-container/20 text-error'
+                        tx.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
+                          'bg-error-container/20 text-error'
                         }`}>
                         {tx.status}
                       </span>

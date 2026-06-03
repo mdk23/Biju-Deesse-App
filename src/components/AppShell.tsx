@@ -45,16 +45,20 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="relative hidden sm:block">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
-            <input
-              className="bg-transparent border-none border-b border-outline-variant/50 pl-10 pr-4 py-2 font-label-caps text-label-caps rose-gold-glow focus:ring-0 w-64"
-              placeholder="SEARCH PIECES..."
-              type="text"
-            />
-          </div>
-          <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">notifications</button>
-          <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">settings</button>
+          {pathname !== '/inventory' && (
+            <>
+              <div className="relative hidden sm:block">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+                <input
+                  className="bg-transparent border-none border-b border-outline-variant/50 pl-10 pr-4 py-2 font-label-caps text-label-caps rose-gold-glow focus:ring-0 w-64"
+                  placeholder="SEARCH PIECES..."
+                  type="text"
+                />
+              </div>
+              <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">notifications</button>
+              <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">settings</button>
+            </>
+          )}
           <div className="w-8 h-8 rounded-full bg-primary-fixed overflow-hidden border border-white/50">
             <img
               alt="Administrator Profile"

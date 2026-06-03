@@ -313,7 +313,8 @@ export default function POS() {
                   </p>
                   <button
                     onClick={() => handleAddToCart(p)}
-                    className="p-1.5 bg-primary/10 text-primary rounded-full hover:bg-primary hover:text-white transition-colors"
+                    disabled={p.stock <= 0}
+                    className="p-1.5 bg-primary/10 text-primary rounded-full hover:bg-primary hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:text-primary"
                   >
                     <PlusCircle size={16} />
                   </button>

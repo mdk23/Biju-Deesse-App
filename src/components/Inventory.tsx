@@ -70,26 +70,25 @@ import { toast } from 'sonner';
 
 // --- Sub-components ---
 
-const StatCard = ({ title, value, subValue, icon: Icon, trend, color }: any) => (
+const StatCard = ({ title, value, subValue, icon: Icon, percentage, color }: any) => (
   <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group hover:shadow-xl transition-all duration-300">
-    <div className={`absolute top-0 right-0 p-4 opacity-10 text-${color}`}>
-      <Icon size={48} />
-    </div>
-    <p className="font-label-caps text-[10px] text-outline mb-2">{title}</p>
-    <div className="flex items-baseline gap-2">
-      <h3 className="font-headline-md text-2xl text-primary">{value}</h3>
-      {trend && (
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center ${trend > 0 ? 'bg-secondary-fixed text-on-secondary-fixed' : 'bg-error-container text-on-error-container'}`}>
-          {trend > 0 ? <ArrowUpRight size={10} className="mr-0.5" /> : <ArrowDownRight size={10} className="mr-0.5" />}
-          {Math.abs(trend)}%
+    <div className="flex justify-between items-start mb-4">
+      <div className={`p-3 rounded-xl bg-${color}/10 text-${color}`}>
+        <Icon size={20} />
+      </div>
+      {percentage !== undefined && (
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-${color}/10 text-${color} border border-${color}/20`}>
+          {percentage}%
         </span>
       )}
     </div>
-    <p className="font-body-md text-xs text-on-surface-variant mt-1">{subValue}</p>
+    <p className="font-label-caps text-[10px] text-outline mb-1">{title}</p>
+    <h3 className="font-headline-md text-2xl text-primary mb-1">{value}</h3>
+    <p className="font-body-md text-xs text-on-surface-variant opacity-70">{subValue}</p>
     <div className="mt-4 h-1 w-full bg-white/20 rounded-full overflow-hidden">
       <motion.div
         initial={{ width: 0 }}
-        animate={{ width: '70%' }}
+        animate={{ width: `${percentage || 0}%` }}
         transition={{ duration: 1, delay: 0.2 }}
         className={`h-full bg-${color}`}
       />
@@ -264,16 +263,6 @@ export default function Inventory() {
           </p>
         </div>
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="hidden lg:flex items-center gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl border border-white/60 shadow-sm">
-            <div className="flex flex-col px-4 border-r border-outline-variant/30">
-              <span className="font-label-caps text-[9px] text-outline">STOCK ACCURACY</span>
-              <span className="font-data-tabular text-sm text-primary font-bold">99.8%</span>
-            </div>
-            <div className="flex flex-col px-4">
-              <span className="font-label-caps text-[9px] text-outline">LAST SYNC</span>
-              <span className="font-data-tabular text-sm text-on-surface-variant">2 mins ago</span>
-            </div>
-          </div>
           <button
             onClick={() => setIsAddingProduct(true)}
             className="flex-1 md:flex-none px-6 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
@@ -284,13 +273,13 @@ export default function Inventory() {
       </div>
 
       {/* Stats Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         <StatCard
           title="TOTAL STOCK VALUE"
           value={analytics ? `${analytics.totalStockValue.toLocaleString()} Mt` : "..."}
           subValue={`Valuation of ${products.length} active pieces`}
           icon={DollarSign}
-          trend={analytics?.valuationTrend}
+          percentage={products.length > 0 ? Math.round((products.filter((p: any) => p.stock > 0).length / products.length) * 100) : 0}
           color="primary"
         />
         <StatCard
@@ -298,7 +287,7 @@ export default function Inventory() {
           value={analytics ? analytics.lowStockCount : "..."}
           subValue="Requires immediate action"
           icon={AlertTriangle}
-          trend={analytics?.lowStockTrend}
+          percentage={analytics && products.length > 0 ? Math.round((analytics.lowStockCount / products.length) * 100) : 0}
           color="secondary"
         />
         <StatCard
@@ -306,6 +295,7 @@ export default function Inventory() {
           value={analytics ? analytics.outOfStockCount : "..."}
           subValue="Lost revenue potential"
           icon={Box}
+          percentage={analytics && products.length > 0 ? Math.round((analytics.outOfStockCount / products.length) * 100) : 0}
           color="error"
         />
         <StatCard
@@ -313,15 +303,8 @@ export default function Inventory() {
           value={analytics ? analytics.deadStockCount : "..."}
           subValue="Idle capital > 180 days"
           icon={Clock}
+          percentage={analytics && products.length > 0 ? Math.round((analytics.deadStockCount / products.length) * 100) : 0}
           color="outline"
-        />
-        <StatCard
-          title="FAST MOVING"
-          value={analytics ? analytics.fastMovingProducts.length : "..."}
-          subValue="Top performers this month"
-          icon={TrendingUp}
-          trend={18}
-          color="tertiary"
         />
       </div>
 
