@@ -147,7 +147,7 @@ export default function Customers() {
     });
   }, [customers, searchQuery, statusFilter]);
 
-  const brief = useQuery(api.analytics.getExecutiveBrief);
+  const brief = useQuery(api.analytics.getExecutiveBrief, {});
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
       .format(val)
