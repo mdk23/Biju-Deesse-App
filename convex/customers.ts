@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { recomputeCustomerIntelligence } from "./intelligence";
 
 export const list = query({
   handler: async (ctx) => {
@@ -23,20 +24,30 @@ export const upsert = mutation({
     phone2: v.optional(v.string()),
     phone3: v.optional(v.string()),
     email: v.optional(v.string()),
-    loyaltyTier: v.string(),
-    totalSpent: v.number(),
-    outstandingBalance: v.number(),
-    creditLimit: v.number(),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...data } = args;
+    let customerId;
     if (id) {
       await ctx.db.patch(id, data);
-      return id;
+      customerId = id;
     } else {
-      return await ctx.db.insert("customers", data);
+      customerId = await ctx.db.insert("customers", {
+        ...data,
+        customerType: "Registered",
+        financialTier: "Regular",
+        loyaltyLevel: "Bronze",
+        creditStatus: "Good Standing",
+        customerScore: 0,
+        customerHealth: "At Risk",
+        totalSpent: 0,
+        orderCount: 0,
+      });
     }
+
+    await recomputeCustomerIntelligence(ctx.db, customerId);
+    return customerId;
   },
 });
 
@@ -47,21 +58,7 @@ export const remove = mutation({
   },
 });
 
-// Update customer balance (e.g., after a partial payment or sale on credit)
-export const updateBalance = mutation({
-  args: {
-    customerId: v.id("customers"),
-    amountChange: v.number(), // Positive increases balance (debt), negative decreases it (payment)
-  },
-  handler: async (ctx, args) => {
-    const customer = await ctx.db.get(args.customerId);
-    if (!customer) throw new Error("Customer not found");
 
-    const newBalance = customer.outstandingBalance + args.amountChange;
-    await ctx.db.patch(args.customerId, { outstandingBalance: newBalance });
-    return newBalance;
-  },
-});
 
 // Analytics: Top spending customers
 export const getTopSpenders = query({

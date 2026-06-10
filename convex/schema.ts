@@ -24,10 +24,18 @@ export default defineSchema({
     phone2: v.optional(v.string()),
     phone3: v.optional(v.string()),
     email: v.optional(v.string()),
-    loyaltyTier: v.string(), // e.g., "Standard", "VIP", "Platinum"
+    customerType: v.optional(v.string()), // "Walk-in", "Registered", "B2B"
+    financialTier: v.optional(v.string()), // "Regular", "Premium", "VIP", "Platinum"
+    loyaltyLevel: v.optional(v.string()), // "Bronze", "Silver", "Gold", "Diamond"
+    loyaltyTier: v.optional(v.string()), // Deprecated, left for schema validation compat
+    creditStatus: v.optional(v.string()), // "Good Standing", "Outstanding", "Overdue"
+    customerScore: v.optional(v.number()), // 0 - 100
+    customerHealth: v.optional(v.string()), // "Elite Client", "Valuable Client", "Growing Client", "At Risk"
     totalSpent: v.number(),
-    outstandingBalance: v.number(),
-    creditLimit: v.number(),
+    creditBalance: v.optional(v.number()),
+    debitBalance: v.optional(v.number()),
+    orderCount: v.optional(v.number()),
+    lastPurchaseDate: v.optional(v.number()),
     notes: v.optional(v.string()),
   }).index("by_last_name", ["lastName"])
     .index("by_phone", ["phone1"]),
@@ -60,7 +68,7 @@ export default defineSchema({
     refundedAmount: v.number(),
     amountReceived: v.optional(v.number()),
     changeGiven: v.optional(v.number()),
-    changeMethod: v.optional(v.string()),
+    changeHandling: v.optional(v.string()),
     notes: v.optional(v.string()),
   }).index("by_receipt", ["receiptNumber"])
     .index("by_customer", ["customerId"]),
@@ -87,4 +95,18 @@ export default defineSchema({
     createdAt: v.number(), // Timestamp
   }).index("by_product", ["productId"])
     .index("by_type", ["movementType"]),
+
+  ledger: defineTable({
+    customerId: v.optional(v.id("customers")),
+    type: v.string(), // "CREDIT", "DEBIT", "PAYMENT", "REFUND", "SALE"
+    amount: v.number(),
+    balanceAfter: v.object({
+      credit: v.number(),
+      debit: v.number(),
+    }),
+    referenceId: v.optional(v.string()), // Transaction or Payment ID
+    description: v.string(),
+    createdAt: v.number(), // Timestamp
+  }).index("by_customer", ["customerId"])
+    .index("by_type", ["type"]),
 });

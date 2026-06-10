@@ -16,6 +16,8 @@ import {
   CreditCard, 
   Clock, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   X, 
   ArrowUpRight, 
   ArrowDownRight,
@@ -123,6 +125,13 @@ export default function Sales() {
   const [isAddingSale, setIsAddingSale] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState('All Methods');
+  const [tierFilter, setTierFilter] = useState('All Tiers');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [lastReceipt, setLastReceipt] = useState('');
 
@@ -141,14 +150,317 @@ export default function Sales() {
     return { subtotal, total };
   }, [saleForm.items, saleForm.discount]);
 
+  const dateRangeLimits = useMemo(() => {
+    const getStartOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T00:00:00");
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+
+    const getEndOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T23:59:59.999");
+      return isNaN(d.getTime()) ? Infinity : d.getTime();
+    };
+
+    const start = startDate ? getStartOfDayStr(startDate) : 0;
+    const end = endDate ? getEndOfDayStr(endDate) : Infinity;
+
+    return { start, end };
+  }, [startDate, endDate]);
+
   const filteredSales = useMemo(() => {
     return transactions.filter(s => {
+      // 1. Search Query (Invoice / Cashier / Customer Name)
+      const customerName = s.customerName || "Walk-in";
       const matchesSearch = s.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           (s.cashierName || "").toLowerCase().includes(searchQuery.toLowerCase());
+                           (s.cashierName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           customerName.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // 2. Status Filter
       const matchesStatus = statusFilter === 'All Status' || s.status === statusFilter;
-      return matchesSearch && matchesStatus;
+
+      // 3. Date Filter
+      const txTime = s._creationTime;
+      const matchesDate = txTime >= dateRangeLimits.start && txTime <= dateRangeLimits.end;
+
+      // 4. Payment Method Filter
+      const matchesPayment = paymentFilter === 'All Methods' || 
+                            s.paymentMethod === paymentFilter || 
+                            s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
+
+      // 5. Customer Tier Filter
+      const computedTier = (s.customerTier || '').toLowerCase();
+      const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
+      
+      let matchesTier = true;
+      if (tierFilter !== 'All Tiers') {
+        if (tierFilter === 'Walk-in') {
+          matchesTier = isWalkIn;
+        } else if (tierFilter === 'VIP / Platinum') {
+          matchesTier = !isWalkIn && (computedTier === 'vip' || computedTier === 'platinum');
+        } else if (tierFilter === 'Gold / Premium') {
+          matchesTier = !isWalkIn && (computedTier === 'gold' || computedTier === 'premium');
+        } else if (tierFilter === 'Standard / Regular') {
+          matchesTier = !isWalkIn && (computedTier === 'standard' || computedTier === 'regular');
+        }
+      }
+
+      // 6. Min/Max Amount Filter
+      const amount = s.total;
+      const min = minAmount ? parseFloat(minAmount) : -Infinity;
+      const max = maxAmount ? parseFloat(maxAmount) : Infinity;
+      const matchesAmount = amount >= min && amount <= max;
+
+      return matchesSearch && matchesStatus && matchesDate && matchesPayment && matchesTier && matchesAmount;
     });
-  }, [transactions, searchQuery, statusFilter]);
+  }, [transactions, searchQuery, statusFilter, dateRangeLimits, paymentFilter, tierFilter, minAmount, maxAmount]);
+
+  const dynamicKPIs = useMemo(() => {
+    const totalRevenue = filteredSales.reduce((acc, s) => acc + s.total, 0);
+    const totalProfit = filteredSales.reduce((acc, s) => acc + s.profit, 0);
+    
+    const clientIds = new Set();
+    let walkInCount = 0;
+    filteredSales.forEach(s => {
+      if (s.customerId) {
+        clientIds.add(s.customerId);
+      } else {
+        walkInCount++;
+      }
+    });
+    const activeClients = clientIds.size + (walkInCount > 0 ? 1 : 0);
+    const avgTransaction = filteredSales.length > 0 ? (totalRevenue / filteredSales.length) : 0;
+    
+    // Valuation is overall product inventory value
+    const estimatedValuation = products.reduce((acc, p) => acc + (p.costPrice * p.stock), 0);
+
+    return {
+      totalRevenue,
+      totalProfit,
+      activeClients,
+      avgTransaction,
+      estimatedValuation,
+    };
+  }, [filteredSales, products]);
+
+  const previousPeriodLimits = useMemo(() => {
+    const { start, end } = dateRangeLimits;
+    if (start === 0 || end === Infinity) {
+      return { start: 0, end: 0 };
+    }
+    const duration = end - start;
+    const prevEnd = start - 1;
+    const prevStart = start - duration;
+    return { start: prevStart, end: prevEnd };
+  }, [dateRangeLimits]);
+
+  const trends = useMemo(() => {
+    const { start, end } = previousPeriodLimits;
+    if (start === 0) {
+      return { revenue: 0, profit: 0, activeClients: 0, avgTransaction: 0 };
+    }
+
+    const prevSales = transactions.filter(s => {
+      const txTime = s._creationTime;
+      const matchesDate = txTime >= start && txTime <= end;
+      const matchesPayment = paymentFilter === 'All Methods' || 
+                            s.paymentMethod === paymentFilter || 
+                            s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
+      
+      const computedTier = (s.customerTier || '').toLowerCase();
+      const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
+      
+      let matchesTier = true;
+      if (tierFilter !== 'All Tiers') {
+        if (tierFilter === 'Walk-in') {
+          matchesTier = isWalkIn;
+        } else if (tierFilter === 'VIP / Platinum') {
+          matchesTier = !isWalkIn && (computedTier === 'vip' || computedTier === 'platinum');
+        } else if (tierFilter === 'Gold / Premium') {
+          matchesTier = !isWalkIn && (computedTier === 'gold' || computedTier === 'premium');
+        } else if (tierFilter === 'Standard / Regular') {
+          matchesTier = !isWalkIn && (computedTier === 'standard' || computedTier === 'regular');
+        }
+      }
+
+      const min = minAmount ? parseFloat(minAmount) : -Infinity;
+      const max = maxAmount ? parseFloat(maxAmount) : Infinity;
+      const matchesAmount = s.total >= min && s.total <= max;
+      const matchesStatus = statusFilter === 'All Status' || s.status === statusFilter;
+
+      return matchesDate && matchesPayment && matchesTier && matchesAmount && matchesStatus;
+    });
+
+    const prevRevenue = prevSales.reduce((acc, s) => acc + s.total, 0);
+    const prevProfit = prevSales.reduce((acc, s) => acc + s.profit, 0);
+    const prevAvg = prevSales.length > 0 ? (prevRevenue / prevSales.length) : 0;
+    
+    const prevClientIds = new Set();
+    let prevWalkIn = 0;
+    prevSales.forEach(s => {
+      if (s.customerId) prevClientIds.add(s.customerId);
+      else prevWalkIn++;
+    });
+    const prevClientsCount = prevClientIds.size + (prevWalkIn > 0 ? 1 : 0);
+
+    const calculatePercentChange = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 1000) / 10;
+    };
+
+    return {
+      revenue: calculatePercentChange(dynamicKPIs.totalRevenue, prevRevenue),
+      profit: calculatePercentChange(dynamicKPIs.totalProfit, prevProfit),
+      activeClients: calculatePercentChange(dynamicKPIs.activeClients, prevClientsCount),
+      avgTransaction: calculatePercentChange(dynamicKPIs.avgTransaction, prevAvg)
+    };
+  }, [previousPeriodLimits, transactions, paymentFilter, tierFilter, minAmount, maxAmount, statusFilter, dynamicKPIs]);
+
+  const getSparklineData = (metric: 'total' | 'profit' | 'count') => {
+    if (filteredSales.length === 0) {
+      return Array(6).fill(0).map(() => ({ value: 0 }));
+    }
+
+    const { start, end } = dateRangeLimits;
+    const actualStart = start > 0 ? start : Math.min(...filteredSales.map(s => s._creationTime));
+    const actualEnd = end < Infinity ? end : Math.max(...filteredSales.map(s => s._creationTime));
+    
+    const interval = (actualEnd - actualStart) / 6 || 1;
+    const points = Array(6).fill(0).map((_, i) => {
+      const intervalStart = actualStart + i * interval;
+      const intervalEnd = intervalStart + interval;
+
+      const salesInInterval = filteredSales.filter(s => s._creationTime >= intervalStart && s._creationTime <= intervalEnd);
+      
+      let value = 0;
+      if (metric === 'total') {
+        value = salesInInterval.reduce((acc, s) => acc + s.total, 0);
+      } else if (metric === 'profit') {
+        value = salesInInterval.reduce((acc, s) => acc + s.profit, 0);
+      } else {
+        value = salesInInterval.length;
+      }
+      return { value };
+    });
+
+    return points;
+  };
+
+  const dynamicRevenueHistory = useMemo(() => {
+    if (filteredSales.length === 0) {
+      return [];
+    }
+
+    const { start, end } = dateRangeLimits;
+
+    const formatDateKey = (timestamp: number, format: 'hour' | 'day' | 'date' | 'month') => {
+      const d = new Date(timestamp);
+      if (format === 'hour') {
+        return `${d.getHours().toString().padStart(2, '0')}:00`;
+      }
+      if (format === 'day') {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        return days[d.getDay()];
+      }
+      if (format === 'date') {
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+      return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    };
+
+    let format: 'hour' | 'day' | 'date' | 'month' = 'month';
+    let durationDays = 30;
+
+    if (start > 0 && end < Infinity) {
+      durationDays = (end - start) / (1000 * 60 * 60 * 24);
+      if (durationDays <= 2) {
+        format = 'hour';
+      } else if (durationDays <= 8) {
+        format = 'day';
+      } else if (durationDays <= 35) {
+        format = 'date';
+      } else {
+        format = 'month';
+      }
+    } else {
+      format = 'month';
+    }
+
+    const dataMap: Record<string, { name: string; revenue: number; profit: number; orders: number }> = {};
+
+    if (format === 'hour') {
+      for (let i = 0; i < 24; i += 2) {
+        const key = `${i.toString().padStart(2, '0')}:00`;
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      }
+    } else if (format === 'day') {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const current = new Date(start > 0 ? start : Date.now() - 6 * 24 * 3600 * 1000);
+      for (let i = 0; i < 7; i++) {
+        const key = days[current.getDay()];
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+        current.setDate(current.getDate() + 1);
+      }
+    } else if (format === 'date') {
+      const current = new Date(start > 0 ? start : Date.now() - 29 * 24 * 3600 * 1000);
+      const limit = new Date(end < Infinity ? end : Date.now());
+      let count = 0;
+      while (current <= limit && count < 32) {
+        const key = formatDateKey(current.getTime(), 'date');
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+        current.setDate(current.getDate() + 1);
+        count++;
+      }
+    } else {
+      const monthsSet = new Set<string>();
+      filteredSales.forEach(s => {
+        monthsSet.add(formatDateKey(s._creationTime, 'month'));
+      });
+      if (monthsSet.size === 0) {
+        const current = new Date();
+        for (let i = 0; i < 6; i++) {
+          monthsSet.add(formatDateKey(current.getTime(), 'month'));
+          current.setMonth(current.getMonth() - 1);
+        }
+      }
+      Array.from(monthsSet).reverse().forEach(key => {
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      });
+    }
+
+    filteredSales.forEach(s => {
+      const key = formatDateKey(s._creationTime, format);
+      if (!dataMap[key]) {
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      }
+      dataMap[key].revenue += s.total;
+      dataMap[key].profit += s.profit;
+      dataMap[key].orders += 1;
+    });
+
+    return Object.values(dataMap);
+  }, [filteredSales, dateRangeLimits]);
+
+  const dynamicCategoryDistribution = useMemo(() => {
+    const categoryCounts: Record<string, number> = {};
+    let totalItems = 0;
+
+    filteredSales.forEach(s => {
+      s.items.forEach((item: any) => {
+        const p = products.find(prod => prod._id === item.productId);
+        const category = p?.category || 'Other';
+        categoryCounts[category] = (categoryCounts[category] || 0) + item.quantity;
+        totalItems += item.quantity;
+      });
+    });
+
+    const categories = Object.entries(categoryCounts).map(([name, count]) => ({
+      name,
+      value: totalItems > 0 ? Math.round((count / totalItems) * 100) : 0,
+      count
+    }));
+
+    return categories.sort((a, b) => b.value - a.value);
+  }, [filteredSales, products]);
 
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
@@ -202,10 +514,9 @@ export default function Sales() {
         profit: totalProfit,
         cashierName: "System Admin", // Replace with auth user if available
         receiptNumber,
-        settlementType,
         amountReceived: totalPaid,
         changeGiven: totalPaid > saleTotals.total ? totalPaid - saleTotals.total : 0,
-        changeMethod: totalPaid > saleTotals.total ? "Cash" : undefined,
+        changeHandling: totalPaid > saleTotals.total ? "Cash" : undefined,
         deliveryStatus: "Pending",
         paymentBreakdown: saleForm.paymentBreakdown,
         items: itemsForMutation,
@@ -223,9 +534,9 @@ export default function Sales() {
         notes: '',
       });
       toast.success(`Transaction ${receiptNumber} finalized`);
-    } catch (error) {
-      toast.error("Failed to process sale");
-      console.error(error);
+    } catch (error: any) {
+      const errorMessage = error.data || error.message || "Failed to process sale";
+      toast.error(typeof errorMessage === 'string' ? errorMessage : "Failed to process sale");
     }
   };
 
@@ -271,43 +582,208 @@ export default function Sales() {
         </div>
       </div>
 
+      {/* Dynamic Advanced Filters Panel */}
+      <div className="glass-panel p-6 rounded-3xl border border-white/50 bg-white/20 mb-8 shadow-sm">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 text-primary rounded-xl">
+              <Filter size={18} />
+            </div>
+            <div>
+              <h3 className="font-headline-md text-lg text-primary">Dashboard Filters</h3>
+              <p className="font-label-caps text-[9px] text-outline tracking-widest uppercase">
+                {startDate || endDate 
+                  ? `Active range: ${startDate || 'All Time'} to ${endDate || 'All Time'}`
+                  : 'Active range: All Time'
+                }
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <button
+              onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+              className="px-4 py-2 font-label-caps text-[10px] rounded-xl bg-white/40 hover:bg-white/60 text-primary border border-primary/10 flex items-center gap-1.5 ml-auto"
+            >
+              {isFiltersExpanded ? 'HIDE OPTIONS' : 'SHOW OPTIONS'}
+              {isFiltersExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Advanced Filters Container */}
+        <AnimatePresence>
+          {isFiltersExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0, marginTop: 0 }}
+              animate={{ height: 'auto', opacity: 1, marginTop: 24 }}
+              exit={{ height: 0, opacity: 0, marginTop: 0 }}
+              className="overflow-hidden border-t border-primary/10 pt-6"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Custom Date Pickers */}
+                <div className="sm:col-span-2 grid grid-cols-2 gap-4 bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                  <div>
+                    <label className="font-label-caps text-[9px] text-outline block mb-1.5">BEGIN DATE</label>
+                    <div className="relative">
+                      <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" />
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all font-data-tabular"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-label-caps text-[9px] text-outline block mb-1.5">END DATE</label>
+                    <div className="relative">
+                      <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" />
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all font-data-tabular"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="font-label-caps text-[9px] text-outline block mb-1.5">PAYMENT METHOD</label>
+                  <select
+                    value={paymentFilter}
+                    onChange={(e) => setPaymentFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all appearance-none font-bold text-primary cursor-pointer"
+                  >
+                    <option value="All Methods">All Methods</option>
+                    <option value="Cash">Cash</option>
+                    <option value="M-Pesa">M-Pesa</option>
+                    <option value="e-Mola">e-Mola</option>
+                    <option value="BCI">BCI</option>
+                    <option value="BIM">BIM</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Card">Card</option>
+                  </select>
+                </div>
+
+                {/* Client Loyalty Tier */}
+                <div>
+                  <label className="font-label-caps text-[9px] text-outline block mb-1.5">LOYALTY TIER</label>
+                  <select
+                    value={tierFilter}
+                    onChange={(e) => setTierFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all appearance-none font-bold text-primary cursor-pointer"
+                  >
+                    <option value="All Tiers">All Tiers</option>
+                    <option value="VIP / Platinum">VIP / Platinum</option>
+                    <option value="Gold / Premium">Gold / Premium</option>
+                    <option value="Standard / Regular">Standard / Regular</option>
+                    <option value="Walk-in">Walk-in Customer</option>
+                  </select>
+                </div>
+
+                {/* Settlement Status */}
+                <div>
+                  <label className="font-label-caps text-[9px] text-outline block mb-1.5">SETTLEMENT STATUS</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all appearance-none font-bold text-primary cursor-pointer"
+                  >
+                    <option value="All Status">All Status</option>
+                    <option value="Completed">Completed / Paid</option>
+                    <option value="Partially Paid">Partially Paid</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Refunded">Refunded</option>
+                  </select>
+                </div>
+
+                {/* Amount Filter Range */}
+                <div className="sm:col-span-2 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-label-caps text-[9px] text-outline block mb-1.5">MIN AMOUNT (Mt)</label>
+                    <input
+                      type="number"
+                      placeholder="Min limit"
+                      value={minAmount}
+                      onChange={(e) => setMinAmount(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all font-data-tabular"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-label-caps text-[9px] text-outline block mb-1.5">MAX AMOUNT (Mt)</label>
+                    <input
+                      type="number"
+                      placeholder="Max limit"
+                      value={maxAmount}
+                      onChange={(e) => setMaxAmount(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white/60 border border-primary/10 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all font-data-tabular"
+                    />
+                  </div>
+                </div>
+
+                {/* Reset Buttons */}
+                <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1">
+                  <button
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                      setPaymentFilter('All Methods');
+                      setTierFilter('All Tiers');
+                      setStatusFilter('All Status');
+                      setMinAmount('');
+                      setMaxAmount('');
+                    }}
+                    className="w-full py-2.5 px-4 bg-white hover:bg-primary/5 text-primary border border-primary/20 rounded-xl font-label-caps text-[10px] transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <RotateCcw size={12} /> RESET ALL FILTERS
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* KPI Section */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
         <KPIStats 
           title="TOTAL REVENUE" 
-          value={brief ? formatCurrency(brief.totalRevenue) : '...'} 
-          trend={12.5} 
+          value={formatCurrency(dynamicKPIs.totalRevenue)} 
+          trend={trends.revenue} 
           icon={DollarSign} 
           color="primary" 
-          sparklineData={[{value: 10}, {value: 30}, {value: 20}, {value: 40}, {value: 35}, {value: 50}]}
+          sparklineData={getSparklineData('total')}
         />
         <KPIStats 
           title="TOTAL PROFIT" 
-          value={brief ? formatCurrency(brief.totalProfit) : '...'} 
-          trend={8.2} 
+          value={formatCurrency(dynamicKPIs.totalProfit)} 
+          trend={trends.profit} 
           icon={TrendingUp} 
           color="secondary" 
-          sparklineData={[{value: 20}, {value: 15}, {value: 35}, {value: 25}, {value: 45}, {value: 40}]}
+          sparklineData={getSparklineData('profit')}
         />
         <KPIStats 
           title="ACTIVE CLIENTS" 
-          value={brief ? brief.activeClients.toString() : '...'} 
-          trend={2.1} 
+          value={dynamicKPIs.activeClients.toString()} 
+          trend={trends.activeClients} 
           icon={CreditCard} 
           color="tertiary" 
-          sparklineData={[{value: 30}, {value: 40}, {value: 35}, {value: 50}, {value: 45}, {value: 55}]}
+          sparklineData={getSparklineData('count')}
         />
         <KPIStats 
           title="AVG TRANSACTION" 
-          value={brief && brief.totalRevenue > 0 ? formatCurrency(brief.totalRevenue / (transactions.length || 1)) : '...'} 
-          trend={-1.4} 
+          value={formatCurrency(dynamicKPIs.avgTransaction)} 
+          trend={trends.avgTransaction} 
           icon={ShoppingBag} 
           color="primary" 
-          sparklineData={[{value: 40}, {value: 35}, {value: 30}, {value: 25}, {value: 20}, {value: 15}]}
+          sparklineData={getSparklineData('total')}
         />
         <KPIStats 
           title="VALUATION" 
-          value={brief ? formatCurrency(brief.estimatedValuation) : '...'} 
+          value={formatCurrency(dynamicKPIs.estimatedValuation)} 
           trend={5.8} 
           icon={BarChart3} 
           color="secondary" 
@@ -321,12 +797,12 @@ export default function Sales() {
           <div className="flex justify-between items-start mb-10">
             <div>
               <h3 className="font-headline-md text-xl text-primary">Revenue Trends</h3>
-              <p className="font-label-caps text-[9px] text-outline tracking-widest">WEEKLY FISCAL PERFORMANCE</p>
+              <p className="font-label-caps text-[9px] text-outline tracking-widest">DYNAMIC FISCAL PERFORMANCE</p>
             </div>
           </div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueHistory || []}>
+              <AreaChart data={dynamicRevenueHistory}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1" >
                     <stop offset="5%" stopColor="#8a4853" stopOpacity={0.1}/>
@@ -352,7 +828,7 @@ export default function Sales() {
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
                 <Pie
-                  data={brief?.categoryDistribution || []}
+                  data={dynamicCategoryDistribution}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -360,7 +836,7 @@ export default function Sales() {
                   paddingAngle={8}
                   dataKey="value"
                 >
-                  {(brief?.categoryDistribution || []).map((entry: any, index: number) => (
+                  {dynamicCategoryDistribution.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -369,7 +845,7 @@ export default function Sales() {
             </ResponsiveContainer>
           </div>
           <div className="mt-8 grid grid-cols-2 gap-4">
-            {(brief?.categoryDistribution || []).map((entry: any, i: number) => (
+            {dynamicCategoryDistribution.map((entry: any, i: number) => (
               <div key={entry.name} className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
                 <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name}</span>
@@ -402,16 +878,20 @@ export default function Sales() {
               <select 
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white/50 border border-outline-variant/30 rounded-xl text-[11px] font-label-caps focus:ring-2 focus:ring-primary/10 outline-none transition-all appearance-none"
+                className="w-full pl-10 pr-4 py-2 bg-white/50 border border-outline-variant/30 rounded-xl text-[11px] font-label-caps focus:ring-2 focus:ring-primary/10 outline-none transition-all appearance-none cursor-pointer"
               >
-                <option>All Status</option>
-                <option>Paid</option>
-                <option>Partial</option>
-                <option>Pending</option>
-                <option>Refunded</option>
+                <option value="All Status">All Status</option>
+                <option value="Completed">Completed / Paid</option>
+                <option value="Partially Paid">Partially Paid</option>
+                <option value="Pending">Pending</option>
+                <option value="Refunded">Refunded</option>
               </select>
             </div>
-            <button className="p-2 border border-outline-variant/30 rounded-xl hover:bg-white transition-all text-outline">
+            <button 
+              onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+              className={`p-2 border border-outline-variant/30 rounded-xl hover:bg-white transition-all text-outline ${isFiltersExpanded ? 'bg-primary/10 text-primary border-primary/20 shadow-sm' : ''}`}
+              title="Toggle Advanced Filters"
+            >
               <Calendar size={18} />
             </button>
           </div>
@@ -518,7 +998,7 @@ export default function Sales() {
                 <div>
                   <h2 className="font-headline-md text-2xl text-primary">{selectedSale.receiptNumber}</h2>
                   <p className="font-label-caps text-[10px] text-outline tracking-widest mt-1">
-                    TRANSACTION COMPLETED ON {new Date(selectedSale._creationTime).toLocaleDateString()} AT {new Date(selectedSale._creationTime).toLocaleTimeString()}
+                    TRANSACTION COMPLETED ON {new Date(selectedSale._creationTime).toLocaleDateString()} AT {new Date(selectedSale._creationTime).toLocaleTimeString()} BY {selectedSale.cashierName?.toUpperCase() || 'SYSTEM'}
                   </p>
                   <div className="mt-3 flex gap-2">
                     <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold ${
@@ -587,12 +1067,42 @@ export default function Sales() {
                       <span className="text-on-surface-variant font-body-md">Subtotal</span>
                       <span className="font-data-tabular font-bold">{formatCurrency(selectedSale.subtotal)}</span>
                     </div>
+                    {selectedSale.discount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-on-surface-variant font-body-md">Discount</span>
+                        <span className="font-data-tabular font-bold text-error">-{formatCurrency(selectedSale.discount)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm border-t border-outline-variant/30 pt-3">
-                      <span className="text-on-surface font-bold font-headline-md">Total Paid</span>
+                      <span className="text-on-surface font-bold font-headline-md">Invoice Total</span>
                       <span className="font-data-tabular font-bold text-xl text-primary">{formatCurrency(selectedSale.total)}</span>
                     </div>
+                    
+                    {/* Tenders Received */}
+                    {selectedSale.paymentBreakdown?.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-outline-variant/30 space-y-2">
+                        <span className="font-label-caps text-[9px] text-outline mb-1 block">TENDERS RECEIVED</span>
+                        {selectedSale.paymentBreakdown.map((p: any, i: number) => (
+                          <div key={i} className="flex justify-between text-sm">
+                            <span className="text-on-surface-variant font-body-md">{p.method}</span>
+                            <span className="font-data-tabular font-bold text-emerald-600">{formatCurrency(p.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Change Given */}
+                    {(selectedSale.changeGiven || 0) > 0 && (
+                      <div className="flex justify-between text-sm mt-2">
+                        <span className="text-on-surface-variant font-body-md">
+                          Change Given {selectedSale.changeHandling ? `(${selectedSale.changeHandling})` : ''}
+                        </span>
+                        <span className="font-data-tabular font-bold text-amber-600">{formatCurrency(selectedSale.changeGiven || 0)}</span>
+                      </div>
+                    )}
+
                     {selectedSale.balance > 0 && (
-                      <div className="flex justify-between text-sm bg-error/5 p-3 rounded-xl mt-4">
+                      <div className="flex justify-between text-sm bg-error/5 p-3 rounded-xl mt-4 border border-error/10">
                         <span className="text-error font-bold flex items-center gap-1"><AlertCircle size={14} /> Outstanding Balance</span>
                         <span className="font-data-tabular font-bold text-error">{formatCurrency(selectedSale.balance)}</span>
                       </div>
@@ -701,7 +1211,7 @@ export default function Sales() {
                         >
                           <option value="">WALK-IN CUSTOMER (NO ACCOUNT)</option>
                           {customers.map(c => (
-                            <option key={c._id} value={c._id}>{c.firstName} {c.lastName} ({c.loyaltyTier})</option>
+                            <option key={c._id} value={c._id}>{c.firstName} {c.lastName} ({c.financialTier} - {c.loyaltyLevel})</option>
                           ))}
                         </select>
                       </section>

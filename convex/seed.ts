@@ -10,10 +10,15 @@ export const seed = mutation({
       lastName: "dos Santos",
       phone1: "+258 84 000 0001",
       email: "isabel@luxury.mz",
-      loyaltyTier: "platinum",
-      outstandingBalance: 0,
+      customerType: "Registered",
+      financialTier: "Platinum",
+      loyaltyLevel: "Bronze",
+      creditStatus: "Good Standing",
+      customerScore: 95,
+      customerHealth: "Elite Client",
       totalSpent: 1250000,
-      creditLimit: 5000000,
+      orderCount: 1,
+      lastPurchaseDate: Date.now() - 5 * 24 * 3600 * 1000,
       notes: "Preferred gold: 18K Rose Gold",
     });
 
@@ -22,10 +27,16 @@ export const seed = mutation({
       lastName: "Moma",
       phone1: "+258 84 000 0002",
       email: "moma@business.mz",
-      loyaltyTier: "gold",
-      outstandingBalance: 400000,
+      customerType: "Registered",
+      financialTier: "Platinum",
+      loyaltyLevel: "Bronze",
+      creditStatus: "Outstanding",
+      customerScore: 82,
+      customerHealth: "Valuable Client",
+      debitBalance: 400000,
       totalSpent: 800000,
-      creditLimit: 1000000,
+      orderCount: 1,
+      lastPurchaseDate: Date.now() - 10 * 24 * 3600 * 1000,
     });
 
     // 2. Seed products

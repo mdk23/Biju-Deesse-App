@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { recomputeCustomerIntelligence } from "./intelligence";
 
 export const list = query({
   handler: async (ctx) => {
@@ -49,13 +50,7 @@ export const addPayment = mutation({
       notes: args.notes,
     });
 
-    // Update customer balance (reducing debt)
-    const customer = await ctx.db.get(args.customerId);
-    if (customer) {
-      await ctx.db.patch(args.customerId, {
-        outstandingBalance: customer.outstandingBalance - args.amount,
-      });
-    }
+    await recomputeCustomerIntelligence(ctx.db, args.customerId);
 
     return paymentId;
   },

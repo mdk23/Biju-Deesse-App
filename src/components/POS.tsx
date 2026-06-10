@@ -7,18 +7,14 @@ import {
   PlusCircle,
   Plus,
   Trash2,
-  Printer,
-  MessageCircle,
-  Bookmark,
-  Banknote,
-  Smartphone,
-  CreditCard,
-  Landmark,
-  Layers,
-  CalendarDays,
   CheckCircle2,
   User,
   X,
+  CreditCard,
+  ToggleLeft,
+  ToggleRight,
+  ShieldCheck,
+  Receipt,
 } from "lucide-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -43,7 +39,7 @@ export default function POS() {
   const [paymentEntries, setPaymentEntries] = useState<
     { id: string; method: string; amount: string }[]
   >([{ id: "1", method: "Cash", amount: "" }]);
-  const [changeMethod, setChangeMethod] = useState("Cash");
+  const [changeHandling, setChangeHandling] = useState("Cash");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCustomer = customers.find((c) => c._id === selectedCustomerId);
@@ -117,7 +113,7 @@ export default function POS() {
     [paymentEntries],
   );
 
-  // Auto-derived - no manual selection needed
+  // Auto-derived settlement state
   const settlementType = useMemo(() => {
     if (amountReceived > 0 && amountReceived >= saleTotals.total) return "Completed";
     if (amountReceived > 0 && amountReceived < saleTotals.total) return "Partially Paid";
@@ -132,7 +128,8 @@ export default function POS() {
     [settlementType, amountReceived, saleTotals.total],
   );
 
-  const outstandingBalance = useMemo(() => {
+
+  const remainingAmount = useMemo(() => {
     if (settlementType === "Completed") return 0;
     if (settlementType === "Pending") return saleTotals.total;
     return Math.max(0, saleTotals.total - amountReceived);
@@ -160,7 +157,7 @@ export default function POS() {
       }
     }
 
-    // Walk-in must pay in full - overpayment is returned as change
+    // Unregistered client (Walk-in): Must receive full payment
     if (!selectedCustomerId && amountReceived < saleTotals.total) {
       toast.error(
         amountReceived === 0
@@ -170,13 +167,34 @@ export default function POS() {
       return;
     }
 
+    if (!selectedCustomerId && changeGiven > 0 && changeHandling === "Store Credit") {
+      toast.error("Walk-in customers cannot receive Store Credit. Please select a different change handling method.");
+      return;
+    }
+
+    // Store Credit validation
+    const storeCreditUsed = paymentEntries
+      .filter((e) => e.method === "Store Credit" && parseFloat(e.amount) > 0)
+      .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+
+    if (storeCreditUsed > 0) {
+      const availableCredit = selectedCustomer?.creditBalance || 0;
+      if (storeCreditUsed > availableCredit) {
+        toast.error(`Insufficient store credit. Trying to use Mt ${storeCreditUsed} but only Mt ${availableCredit} is available.`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
       const receiptNumber = `INV-${Date.now().toString().slice(-8)}`;
 
+      // Determine effective settlement type
+      let effectiveSettlement = settlementType;
+
       const paymentBreakdown =
-        settlementType === "Pending"
+        effectiveSettlement === "Pending"
           ? []
           : paymentEntries
               .filter((e) => parseFloat(e.amount) > 0)
@@ -199,22 +217,21 @@ export default function POS() {
         profit: saleTotals.profit,
         cashierName: "Biju Cashier",
         receiptNumber,
-        settlementType,
-        amountReceived: settlementType === "Pending" ? 0 : amountReceived,
+        amountReceived: effectiveSettlement === "Pending" ? 0 : amountReceived,
         changeGiven,
-        changeMethod: changeGiven > 0 ? changeMethod : undefined,
-        deliveryStatus: settlementType === "Pending" ? "Pending" : "Delivered",
+        changeHandling: changeGiven > 0 ? changeHandling : undefined,
+        deliveryStatus: effectiveSettlement === "Pending" ? "Pending" : "Delivered",
         paymentBreakdown,
       });
 
-      toast.success(`Transaction ${receiptNumber} completed!`);
+      toast.success(`Transaction ${receiptNumber} saved!`);
       setCart([]);
       setPaymentEntries([{ id: "1", method: "Cash", amount: "" }]);
       setSelectedCustomerId(null);
       setCustomerSearch("");
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "Failed to complete transaction.");
+      const errorMessage = err.data || err.message || "Failed to complete transaction.";
+      toast.error(typeof errorMessage === 'string' ? errorMessage : "Failed to complete transaction.");
     } finally {
       setIsSubmitting(false);
     }
@@ -349,7 +366,7 @@ export default function POS() {
                   : "Walk-in Client"}
               </p>
               <p className="text-[11px] text-on-surface-variant">
-                Tier: {selectedCustomer ? selectedCustomer.loyaltyTier : "N/A"}
+                Tier: {selectedCustomer ? `${selectedCustomer.financialTier} (${selectedCustomer.loyaltyLevel})` : "N/A"}
               </p>
             </div>
             {selectedCustomer && (
@@ -555,40 +572,48 @@ export default function POS() {
                     value={entry.method}
                     onChange={(e) =>
                       setPaymentEntries((prev) =>
-                        prev.map((p) =>
-                          p.id === entry.id
-                            ? { ...p, method: e.target.value }
-                            : p,
-                        ),
+                        prev.map((p) => {
+                          if (p.id === entry.id) {
+                            const newMethod = e.target.value;
+                            let newAmount = p.amount;
+                            if (newMethod === "Store Credit" && selectedCustomer?.creditBalance) {
+                              if (Number(newAmount) > selectedCustomer.creditBalance) {
+                                newAmount = selectedCustomer.creditBalance.toString();
+                              }
+                            }
+                            return { ...p, method: newMethod, amount: newAmount };
+                          }
+                          return p;
+                        }),
                       )
                     }
                     className="bg-surface-container border border-outline-variant/30 rounded-lg px-2 py-2 text-[11px] font-bold text-primary outline-none w-28 flex-shrink-0 cursor-pointer"
                   >
-                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel"].map(
-                      (m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ),
-                    )}
+                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel", "Bank Transfer"]
+                      .concat(selectedCustomer?.creditBalance && selectedCustomer.creditBalance > 0 ? ["Store Credit"] : [])
+                      .map((m) => (
+                      <option key={m} value={m}>{m === "Store Credit" ? `Store Credit (Mt ${selectedCustomer!.creditBalance})` : m}</option>
+                    ))}
                   </select>
                   <div className="flex-1 relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-outline pointer-events-none">
-                      Mt
-                    </span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-outline pointer-events-none">Mt</span>
                     <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="0"
+                      type="number" min="0" step="1" placeholder="0"
                       value={entry.amount}
                       onChange={(e) =>
                         setPaymentEntries((prev) =>
-                          prev.map((p) =>
-                            p.id === entry.id
-                              ? { ...p, amount: e.target.value }
-                              : p,
-                          ),
+                          prev.map((p) => {
+                            if (p.id === entry.id) {
+                              let newAmount = e.target.value;
+                              if (p.method === "Store Credit" && selectedCustomer?.creditBalance) {
+                                if (Number(newAmount) > selectedCustomer.creditBalance) {
+                                  newAmount = selectedCustomer.creditBalance.toString();
+                                }
+                              }
+                              return { ...p, amount: newAmount };
+                            }
+                            return p;
+                          }),
                         )
                       }
                       className="w-full pl-9 pr-3 py-2 bg-surface-container border border-outline-variant/30 rounded-lg text-sm font-bold text-on-surface outline-none focus:border-primary transition-colors"
@@ -596,11 +621,7 @@ export default function POS() {
                   </div>
                   {paymentEntries.length > 1 && (
                     <button
-                      onClick={() =>
-                        setPaymentEntries((prev) =>
-                          prev.filter((p) => p.id !== entry.id),
-                        )
-                      }
+                      onClick={() => setPaymentEntries((prev) => prev.filter((p) => p.id !== entry.id))}
                       className="p-1.5 text-outline hover:text-error transition-colors flex-shrink-0"
                     >
                       <X size={14} />
@@ -619,8 +640,7 @@ export default function POS() {
                 }
                 className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:opacity-70 transition-opacity mt-1"
               >
-                <Plus size={12} />
-                ADD PAYMENT METHOD
+                <Plus size={12} /> ADD PAYMENT METHOD
               </button>
             )}
           </div>
@@ -628,76 +648,65 @@ export default function POS() {
           {/* Payment Summary */}
           <div className="bg-gradient-to-br from-primary/8 to-primary/3 border border-primary/15 rounded-xl p-4 space-y-2">
             <div className="flex items-center justify-between mb-1">
-              <p className="font-label-caps text-[9px] text-on-surface-variant tracking-widest">
-                PAYMENT SUMMARY
-              </p>
-              {amountReceived > 0 && (
-                <span
-                  className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${
+              <p className="font-label-caps text-[9px] text-on-surface-variant tracking-widest">PAYMENT SUMMARY</p>
+              <div className="flex items-center gap-1.5">                {amountReceived > 0 && (
+                  <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${
                     settlementType === "Completed"
                       ? "bg-emerald-100 text-emerald-700"
-                      : settlementType === "Partially Paid"
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-rose-100 text-rose-700"
-                  }`}
-                >
-                  {settlementType.toUpperCase()}
-                </span>
-              )}
+                      : "bg-amber-100 text-amber-700"
+                  }`}>
+                    {amountReceived >= saleTotals.total ? "FULLY PAID" : "PARTIAL"}
+                  </span>
+                )}
+              </div>
             </div>
+
             <div className="flex justify-between items-center text-xs">
               <span className="text-on-surface-variant">Invoice Total</span>
-              <span className="font-bold text-on-surface font-data-tabular">
-                {formatCurrency(saleTotals.total)}
-              </span>
+              <span className="font-bold text-on-surface font-data-tabular">{formatCurrency(saleTotals.total)}</span>
             </div>
+
             <div className="flex justify-between items-center text-xs">
               <span className="text-on-surface-variant">Amount Received</span>
-              <span
-                className={`font-bold font-data-tabular transition-colors ${
-                  amountReceived > 0 ? "text-emerald-600" : "text-outline/60"
-                }`}
-              >
-                {formatCurrency(amountReceived)}
-              </span>
+              <span className={`font-bold font-data-tabular ${
+                amountReceived > 0 ? "text-emerald-600" : "text-outline/60"
+              }`}>{formatCurrency(amountReceived)}</span>
             </div>
+
+            {remainingAmount > 0 && amountReceived > 0 && (
+              <div className="flex justify-between items-center text-error bg-error/5 p-3 rounded-xl border border-error/10">
+                <span className="font-bold font-label-caps text-xs tracking-wider">Remaining to Pay</span>
+                <span className="font-bold text-error font-data-tabular">{formatCurrency(remainingAmount)}</span>
+              </div>
+            )}
+
             {changeGiven > 0 && (
               <>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-on-surface-variant">Change Given</span>
-                  <span className="font-bold text-amber-600 font-data-tabular">
-                    {formatCurrency(changeGiven)}
-                  </span>
+                  <span className="font-bold text-amber-600 font-data-tabular">{formatCurrency(changeGiven)}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-on-surface-variant">Change Method</span>
+                  <span className="text-on-surface-variant">Change Handling</span>
                   <select
-                    value={changeMethod}
-                    onChange={(e) => setChangeMethod(e.target.value)}
+                    value={changeHandling}
+                    onChange={(e) => setChangeHandling(e.target.value)}
                     className="bg-transparent border border-outline-variant/30 rounded px-1 py-0.5 text-[10px] font-bold text-primary outline-none cursor-pointer"
                   >
-                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel"].map((m) => (
+                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel", "Bank Transfer"]
+                      .concat(selectedCustomerId ? ["Store Credit"] : [])
+                      .map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
                 </div>
               </>
             )}
-            {outstandingBalance > 0 && amountReceived > 0 && (
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant">Outstanding Balance</span>
-                <span className="font-bold text-rose-600 font-data-tabular">
-                  {formatCurrency(outstandingBalance)}
-                </span>
-              </div>
-            )}
+
+
             <div className="flex justify-between items-center pt-2 mt-1 border-t border-primary/15">
-              <span className="font-label-caps text-label-caps text-primary">
-                Total Due
-              </span>
-              <span className="font-headline-md text-2xl text-primary">
-                {formatCurrency(saleTotals.total)}
-              </span>
+              <span className="font-label-caps text-label-caps text-primary">Total Due</span>
+              <span className="font-headline-md text-2xl text-primary">{formatCurrency(saleTotals.total)}</span>
             </div>
           </div>
 
@@ -706,9 +715,15 @@ export default function POS() {
             whileTap={{ scale: 0.98 }}
             onClick={handleCompleteTransaction}
             disabled={isSubmitting || cart.length === 0}
-            className="w-full py-4 bg-primary text-white font-bold text-label-caps tracking-widest rounded-lg shadow-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`w-full py-4 font-bold text-label-caps tracking-widest rounded-lg shadow-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-primary text-white`}
           >
-            {isSubmitting ? "PROCESSING..." : "COMPLETE TRANSACTION"}
+            <span className="flex items-center justify-center gap-2">
+              {isSubmitting ? (
+                "PROCESSING..."
+              ) : (
+                "COMPLETE TRANSACTION"
+              )}
+            </span>
           </motion.button>
         </div>
       </aside>

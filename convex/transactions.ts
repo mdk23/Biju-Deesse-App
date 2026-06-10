@@ -1,5 +1,6 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { recomputeCustomerIntelligence } from "./intelligence";
 
 export const list = query({
   handler: async (ctx) => {
@@ -25,7 +26,7 @@ export const list = query({
         ...tx,
         items: itemsWithDetails,
         customerName: customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in",
-        customerTier: customer?.loyaltyTier || "Standard",
+        customerTier: customer?.financialTier || "Regular",
         paymentStatus: balance === 0 ? "Paid" : (totalPaid > 0 ? "Partial" : "Pending"),
         balance,
         // For convenience, provide the first method if only one exists
@@ -52,10 +53,9 @@ export const create = mutation({
     profit: v.number(),
     cashierName: v.string(),
     receiptNumber: v.string(),
-    settlementType: v.string(), // "Completed", "Partially Paid", "Pending"
     amountReceived: v.number(),
     changeGiven: v.number(),
-    changeMethod: v.optional(v.string()),
+    changeHandling: v.optional(v.string()),
     deliveryStatus: v.string(), // "Pending", "Shipped", "Delivered"
     paymentBreakdown: v.array(
       v.object({
@@ -68,31 +68,88 @@ export const create = mutation({
   handler: async (ctx, args) => {
     // 1. Determine Status & Validate Settlement
     const totalPayments = args.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-    let status = "Pending";
     
-    if (totalPayments >= args.total) {
+    // Validate split payments match amountReceived
+    if (Math.abs(totalPayments - args.amountReceived) > 0.01) {
+      throw new Error(`Split payments total (${totalPayments}) does not match amount received (${args.amountReceived}).`);
+    }
+
+    let status = "Pending";
+    if (args.amountReceived >= args.total) {
       status = "Completed";
-    } else if (totalPayments > 0) {
+    } else if (args.amountReceived > 0) {
       status = "Partially Paid";
     }
 
-    // Backend Validation: Settlement vs Reality
-    if (args.settlementType === "Completed" && status !== "Completed") {
-      throw new Error("Full settlement requires total payment coverage.");
+    const change = args.amountReceived - args.total;
+    const isOverpayment = change > 0;
+    const isUnderpayment = change < 0;
+
+    // Validate generic customer constraints
+    if (!args.customerId && isUnderpayment) {
+      throw new Error("Walk-in transactions must be fully settled at checkout. No credit/debit allowed.");
     }
-    if (args.settlementType === "Partially Paid" && status !== "Partially Paid") {
-      throw new Error("Partial settlement requires payment > 0 and < total.");
-    }
-    if (args.settlementType === "Pending" && status !== "Pending") {
-      throw new Error("Pending settlement requires zero payment.");
+    
+    if (isOverpayment && !args.changeHandling) {
+      throw new Error("Change handling method is required for overpayments.");
     }
 
-    // Extra Validation: Walk-in must be Fully Paid
-    if (!args.customerId && args.settlementType !== "Completed") {
-      throw new Error("Walk-in transactions must be fully settled at checkout.");
+    // 2. Fetch Customer and Update Balances
+    let customer = null;
+    let newCreditBalance = 0;
+    let newDebitBalance = 0;
+
+    if (args.customerId) {
+      customer = await ctx.db.get(args.customerId);
+      if (!customer) throw new Error("Customer not found");
+      
+      newCreditBalance = customer.creditBalance || 0;
+      newDebitBalance = customer.debitBalance || 0;
+
+      const storeCreditUsed = args.paymentBreakdown
+        .filter(p => p.method === "Store Credit")
+        .reduce((sum, p) => sum + p.amount, 0);
+
+      if (storeCreditUsed > 0) {
+        if (newCreditBalance >= storeCreditUsed) {
+          newCreditBalance -= storeCreditUsed;
+        } else {
+          throw new ConvexError("Insufficient store credit to cover payment amount.");
+        }
+      }
+
+      if (isOverpayment && args.changeHandling === "Store Credit") {
+        if (newDebitBalance > 0) {
+          if (change >= newDebitBalance) {
+            newCreditBalance += (change - newDebitBalance);
+            newDebitBalance = 0;
+          } else {
+            newDebitBalance -= change;
+          }
+        } else {
+          newCreditBalance += change;
+        }
+      } else if (isUnderpayment) {
+        const debt = Math.abs(change);
+        if (newCreditBalance > 0) {
+          if (debt >= newCreditBalance) {
+            newDebitBalance += (debt - newCreditBalance);
+            newCreditBalance = 0;
+          } else {
+            newCreditBalance -= debt;
+          }
+        } else {
+          newDebitBalance += debt;
+        }
+      }
+
+      await ctx.db.patch(args.customerId, {
+        creditBalance: newCreditBalance,
+        debitBalance: newDebitBalance,
+      });
     }
 
-    // 2. Create Transaction
+    // 3. Create Transaction
     const transactionId = await ctx.db.insert("transactions", {
       customerId: args.customerId,
       receiptNumber: args.receiptNumber,
@@ -103,18 +160,77 @@ export const create = mutation({
       profit: args.profit,
       cashierName: args.cashierName,
       status,
-      settlementType: args.settlementType,
+      settlementType: status === "Completed" ? "Fully Paid" : status,
       deliveryStatus: args.deliveryStatus,
       paymentBreakdown: args.paymentBreakdown,
       items: args.items,
       refundedAmount: 0,
       amountReceived: args.amountReceived,
-      changeGiven: args.changeGiven,
-      changeMethod: args.changeMethod,
+      changeGiven: isOverpayment ? change : 0,
+      changeHandling: isOverpayment ? args.changeHandling : undefined,
       notes: args.notes,
     });
 
-    // 2. Process Items (Inventory)
+    const now = Date.now();
+
+    // 4. Ledger: SALE
+    await ctx.db.insert("ledger", {
+      customerId: args.customerId,
+      type: "SALE",
+      amount: args.total,
+      balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+      referenceId: transactionId,
+      description: `Sale ${args.receiptNumber}`,
+      createdAt: now,
+    });
+
+    // 5. Ledger & Payments: PAYMENT
+    for (const pay of args.paymentBreakdown) {
+      const paymentId = await ctx.db.insert("payments", {
+        transactionId,
+        customerId: args.customerId,
+        amount: pay.amount,
+        paymentMethod: pay.method,
+        paymentDate: now,
+        status: "Completed",
+      });
+
+      await ctx.db.insert("ledger", {
+        customerId: args.customerId,
+        type: "PAYMENT",
+        amount: pay.amount,
+        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        referenceId: paymentId,
+        description: `Payment via ${pay.method} for ${args.receiptNumber}`,
+        createdAt: now,
+      });
+    }
+
+    // 6. Ledger: Change Handling (REFUND or CREDIT) / Underpayment (DEBIT)
+    if (isOverpayment) {
+      const changeType = args.changeHandling === "Store Credit" ? "CREDIT" : "REFUND";
+      await ctx.db.insert("ledger", {
+        customerId: args.customerId,
+        type: changeType,
+        amount: change,
+        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        referenceId: transactionId,
+        description: `${changeType === "CREDIT" ? "Store Credit" : "Change Refund"} for ${args.receiptNumber}`,
+        createdAt: now,
+      });
+    } else if (isUnderpayment) {
+      await ctx.db.insert("ledger", {
+        customerId: args.customerId,
+        type: "DEBIT",
+        amount: Math.abs(change),
+        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        referenceId: transactionId,
+        description: `Outstanding balance for ${args.receiptNumber}`,
+        createdAt: now,
+      });
+    }
+
+    // 7. Process Items (Inventory)
     for (const item of args.items) {
       const product = await ctx.db.get(item.productId);
       if (!product) throw new Error(`Product ${item.productId} not found`);
@@ -133,42 +249,12 @@ export const create = mutation({
         previousStock,
         newStock,
         reason: `Sale ${args.receiptNumber}`,
-        createdAt: Date.now(),
+        createdAt: now,
       });
     }
 
-    // 3. Process Client (if any)
     if (args.customerId) {
-      const customer = await ctx.db.get(args.customerId);
-      if (customer) {
-        await ctx.db.patch(args.customerId, {
-          totalSpent: customer.totalSpent + args.total,
-        });
-      }
-    }
-
-    // 4. Record Payments
-    let totalPaid = 0;
-    for (const pay of args.paymentBreakdown) {
-      await ctx.db.insert("payments", {
-        transactionId,
-        customerId: args.customerId,
-        amount: pay.amount,
-        paymentMethod: pay.method,
-        paymentDate: Date.now(),
-        status: "Completed",
-      });
-      totalPaid += pay.amount;
-    }
-
-    // Handle outstanding balance if payment < total
-    if (args.customerId && totalPaid < args.total) {
-      const customer = await ctx.db.get(args.customerId);
-      if (customer) {
-        await ctx.db.patch(args.customerId, {
-          outstandingBalance: customer.outstandingBalance + (args.total - totalPaid),
-        });
-      }
+      await recomputeCustomerIntelligence(ctx.db, args.customerId);
     }
 
     return transactionId;
@@ -218,31 +304,92 @@ export const remove = mutation({
       }
     }
 
-    // 2. Rollback Customer Spending/Balance
-    if (transaction.customerId) {
-      const customer = await ctx.db.get(transaction.customerId);
-      if (customer) {
-        const totalPaid = transaction.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-        const unpaidAmount = transaction.total - totalPaid;
-
-        await ctx.db.patch(transaction.customerId, {
-          totalSpent: Math.max(0, customer.totalSpent - transaction.total),
-          outstandingBalance: Math.max(0, customer.outstandingBalance - unpaidAmount),
-        });
-      }
-    }
-
-    // 3. Delete Associated Payments
+    // 3. Delete Associated Payments and their Ledger Entries
     const payments = await ctx.db
       .query("payments")
       .withIndex("by_transaction", (q) => q.eq("transactionId", args.id))
       .collect();
     
+    const paymentIds = payments.map(p => p._id);
     for (const payment of payments) {
       await ctx.db.delete(payment._id);
     }
 
-    // 4. Delete Transaction
+    // 4. Revert Customer Balances & Delete Ledger Entries
+    if (transaction.customerId) {
+      const customer = await ctx.db.get(transaction.customerId);
+      if (customer) {
+        let creditBalance = customer.creditBalance || 0;
+        let debitBalance = customer.debitBalance || 0;
+
+        const amountReceived = transaction.amountReceived || 0;
+        const change = amountReceived - transaction.total;
+        
+        let applyAsDebt = 0;
+        let applyAsCredit = 0;
+
+        if (change > 0 && transaction.changeHandling === "Store Credit") {
+          applyAsDebt += change;
+        } else if (change < 0) {
+          applyAsCredit += Math.abs(change);
+        }
+
+        const storeCreditUsed = payments
+          .filter((p) => p.paymentMethod === "Store Credit")
+          .reduce((sum, p) => sum + p.amount, 0);
+
+        applyAsCredit += storeCreditUsed;
+
+        if (applyAsDebt > 0) {
+          if (creditBalance > 0) {
+            if (applyAsDebt >= creditBalance) {
+              debitBalance += (applyAsDebt - creditBalance);
+              creditBalance = 0;
+            } else {
+              creditBalance -= applyAsDebt;
+            }
+          } else {
+            debitBalance += applyAsDebt;
+          }
+        }
+
+        if (applyAsCredit > 0) {
+          if (debitBalance > 0) {
+            if (applyAsCredit >= debitBalance) {
+              creditBalance += (applyAsCredit - debitBalance);
+              debitBalance = 0;
+            } else {
+              debitBalance -= applyAsCredit;
+            }
+          } else {
+            creditBalance += applyAsCredit;
+          }
+        }
+
+        await ctx.db.patch(transaction.customerId, {
+          creditBalance: Math.max(0, creditBalance),
+          debitBalance: Math.max(0, debitBalance)
+        });
+      }
+
+      // Delete Ledger Entries tied to this transaction or its payments
+      const customerLedgers = await ctx.db
+        .query("ledger")
+        .withIndex("by_customer", (q) => q.eq("customerId", transaction.customerId))
+        .collect();
+
+      for (const entry of customerLedgers) {
+        if (entry.referenceId === args.id || (entry.referenceId && paymentIds.includes(entry.referenceId as any))) {
+          await ctx.db.delete(entry._id);
+        }
+      }
+    }
+
+    // 5. Delete Transaction
     await ctx.db.delete(args.id);
+
+    if (transaction.customerId) {
+      await recomputeCustomerIntelligence(ctx.db, transaction.customerId);
+    }
   },
 });
