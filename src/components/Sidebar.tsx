@@ -12,6 +12,8 @@ type SidebarProps = {
 const navItems = [
   { href: '/', icon: 'home', label: 'Dashboard' },
   { href: '/pos', icon: 'point_of_sale', label: 'POS' },
+  { href: '/caixa', icon: 'account_balance_wallet', label: 'Caixa' },
+  { href: '/caixa-reports', icon: 'bar_chart', label: 'Caixa Reports' },
   { href: '/inventory', icon: 'inventory_2', label: 'Inventory' },
   { href: '/customers', icon: 'people', label: 'Customers' },
   { href: '/sales', icon: 'trending_up', label: 'Sales' },

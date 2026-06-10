@@ -66,6 +66,31 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // 0. Caixa validation for cash payments
+    const cashPayment = args.paymentBreakdown.find(p => p.method.toLowerCase() === "cash");
+    let openSession: any = null;
+    
+    if (cashPayment && cashPayment.amount > 0) {
+      openSession = await ctx.db
+        .query("caixaSessions")
+        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
+        .first();
+
+      if (!openSession) {
+        throw new Error("Cannot process cash payment. No Caixa session open.");
+      }
+
+      const sessionDate = new Date(openSession.openedAt);
+      const today = new Date();
+      if (
+        sessionDate.getDate() !== today.getDate() ||
+        sessionDate.getMonth() !== today.getMonth() ||
+        sessionDate.getFullYear() !== today.getFullYear()
+      ) {
+        throw new Error("Caixa Session from previous day is still open. Please close it and open a new session for today.");
+      }
+    }
+
     // 1. Determine Status & Validate Settlement
     const totalPayments = args.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
     
@@ -204,6 +229,41 @@ export const create = mutation({
         description: `Payment via ${pay.method} for ${args.receiptNumber}`,
         createdAt: now,
       });
+    }
+
+    // 5.5. Caixa Movement
+    if (cashPayment && cashPayment.amount > 0 && openSession) {
+      let netCash = cashPayment.amount;
+      if (isOverpayment && args.changeHandling === "Cash") {
+        netCash -= change; // Adjust if we gave cash change
+      }
+
+      if (netCash > 0) {
+        const runningBalance = openSession.expectedCash + netCash;
+        await ctx.db.patch(openSession._id, {
+          expectedCash: runningBalance,
+          totalCashSales: openSession.totalCashSales + netCash,
+        });
+
+        const movementId = await ctx.db.insert("caixaMovements", {
+          sessionId: openSession._id,
+          type: "SALE",
+          amount: netCash,
+          description: `Cash sale for ${args.receiptNumber}`,
+          userId: args.cashierName,
+          timestamp: now,
+          runningBalance,
+          referenceId: transactionId,
+        });
+
+        await ctx.db.insert("auditLogs", {
+          userId: args.cashierName,
+          timestamp: now,
+          action: "CAIXA_SALE",
+          afterValue: { amount: netCash, runningBalance },
+          referenceId: movementId,
+        });
+      }
     }
 
     // 6. Ledger: Change Handling (REFUND or CREDIT) / Underpayment (DEBIT)
@@ -387,6 +447,52 @@ export const remove = mutation({
 
     // 5. Delete Transaction
     await ctx.db.delete(args.id);
+
+    // 6. Caixa SALE_REVERSAL
+    const cashPayment = transaction.paymentBreakdown.find((p: any) => p.method.toLowerCase() === "cash");
+    if (cashPayment && cashPayment.amount > 0) {
+      const openSession = await ctx.db
+        .query("caixaSessions")
+        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
+        .first();
+        
+      if (openSession) {
+        let netCash = cashPayment.amount;
+        const amountReceived = transaction.amountReceived || 0;
+        const change = amountReceived - transaction.total;
+        const isOverpayment = change > 0;
+        if (isOverpayment && transaction.changeHandling === "Cash") {
+          netCash -= change;
+        }
+
+        if (netCash > 0) {
+          const runningBalance = openSession.expectedCash - netCash;
+          await ctx.db.patch(openSession._id, {
+            expectedCash: runningBalance,
+            totalCashSales: openSession.totalCashSales - netCash,
+          });
+
+          const movementId = await ctx.db.insert("caixaMovements", {
+            sessionId: openSession._id,
+            type: "SALE_REVERSAL",
+            amount: netCash,
+            description: `Reversal of cash sale for ${transaction.receiptNumber}`,
+            userId: transaction.cashierName || "System Admin",
+            timestamp: Date.now(),
+            runningBalance,
+            referenceId: transaction._id,
+          });
+
+          await ctx.db.insert("auditLogs", {
+            userId: transaction.cashierName || "System Admin",
+            timestamp: Date.now(),
+            action: "CAIXA_SALE_REVERSAL",
+            afterValue: { amount: netCash, runningBalance },
+            referenceId: movementId,
+          });
+        }
+      }
+    }
 
     if (transaction.customerId) {
       await recomputeCustomerIntelligence(ctx.db, transaction.customerId);

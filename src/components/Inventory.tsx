@@ -113,7 +113,8 @@ const InventoryActions = () => (
 // --- Main Component ---
 
 export default function Inventory() {
-  const products = useQuery(api.products.list, { archived: false }) || [];
+  const [showArchived, setShowArchived] = useState(false);
+  const products = useQuery(api.products.list, { archived: showArchived }) || [];
   const upsertProduct = useMutation(api.products.upsert);
   const deleteProduct = useMutation(api.products.remove);
 
@@ -122,6 +123,19 @@ export default function Inventory() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  type SortColumn = 'name' | 'category' | 'costPrice' | 'sellingPrice' | 'stock' | 'status';
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (col: SortColumn) => {
+    if (sortColumn === col) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(col);
+      setSortDirection('asc');
+    }
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -180,7 +194,28 @@ export default function Inventory() {
       p.code.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
     return matchesSearch && matchesCategory;
+  }).sort((a: any, b: any) => {
+    if (!sortColumn) return 0;
+    let valA = a[sortColumn];
+    let valB = b[sortColumn];
+    
+    if (sortColumn === 'status') {
+      const getStatusRank = (p: any) => p.stock > p.reorderLevel ? 3 : (p.stock > 0 ? 2 : 1);
+      valA = getStatusRank(a);
+      valB = getStatusRank(b);
+    } else if (sortColumn === 'name') {
+      valA = a.name.toLowerCase();
+      valB = b.name.toLowerCase();
+    }
+
+    if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+    if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+    return 0;
   });
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const COLORS = ['#8a4853', '#735c00', '#6e5371', '#d7c1c3', '#857374'];
 
@@ -420,17 +455,28 @@ export default function Inventory() {
                 type="text"
                 placeholder="Search SKU or Name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-10 pr-4 py-2 bg-white/50 border border-primary/10 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               />
             </div>
+            
+            <div className="flex items-center gap-2 ml-4">
+              <label className="font-label-caps text-[10px] text-outline whitespace-nowrap">SHOW ARCHIVED</label>
+              <button
+                type="button"
+                onClick={() => { setShowArchived(!showArchived); setCurrentPage(1); }}
+                className={`w-10 h-5 rounded-full transition-colors relative ${showArchived ? 'bg-error' : 'bg-outline-variant'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${showArchived ? 'left-[22px]' : 'left-0.5'}`}></div>
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
             {['All', 'Earrings', 'Bracelets', 'Charms', 'Piercings', 'Necklaces', 'Necklace & Earring Sets', 'Watches', 'Rings'].map(cat => (
               <button
                 key={cat}
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-4 py-1.5 rounded-full font-label-caps text-[10px] transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-primary text-on-primary' : 'bg-white/60 text-primary border border-primary/20 hover:bg-primary/5'}`}
+                onClick={() => { setCategoryFilter(cat); setCurrentPage(1); }}
+                className={`px-4 py-1.5 rounded-full font-label-caps text-[10px] transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-primary text-on-primary shadow-md' : 'bg-white/60 text-primary border border-primary/20 hover:bg-primary/5'}`}
               >
                 {cat.toUpperCase()}
               </button>
@@ -442,17 +488,29 @@ export default function Inventory() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-primary/5 border-b border-primary/10 font-label-caps text-[11px] text-primary">
-                <th className="px-8 py-5">PRODUCT INFO</th>
-                <th className="px-6 py-5">CATEGORY</th>
-                <th className="px-6 py-5">COST PRICE</th>
-                <th className="px-6 py-5">SELLING PRICE</th>
-                <th className="px-6 py-5">QUANTITY</th>
-                <th className="px-6 py-5">STATUS</th>
+                <th className="px-8 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('name')}>
+                  <div className="flex items-center gap-1">PRODUCT INFO {sortColumn === 'name' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
+                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('category')}>
+                  <div className="flex items-center gap-1">CATEGORY {sortColumn === 'category' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
+                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('costPrice')}>
+                  <div className="flex items-center gap-1">COST PRICE {sortColumn === 'costPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
+                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('sellingPrice')}>
+                  <div className="flex items-center gap-1">SELLING PRICE {sortColumn === 'sellingPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
+                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('stock')}>
+                  <div className="flex items-center gap-1">QUANTITY {sortColumn === 'stock' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
+                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('status')}>
+                  <div className="flex items-center gap-1">STATUS {sortColumn === 'status' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                </th>
                 <th className="px-8 py-5 text-right">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-primary/5">
-              {filteredProducts.map((product) => (
+              {paginatedProducts.map((product: any) => (
                 <tr
                   key={product._id}
                   className="hover:bg-white/50 transition-colors group cursor-pointer"
@@ -516,10 +574,24 @@ export default function Inventory() {
           </table>
         </div>
         <div className="px-8 py-4 bg-primary/5 flex justify-between items-center border-t border-primary/10">
-          <p className="font-label-caps text-[10px] text-outline">Showing {filteredProducts.length} of {products.length} pieces</p>
+          <p className="font-label-caps text-[10px] text-outline">
+            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} pieces
+          </p>
           <div className="flex gap-2">
-            <button className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all">PREVIOUS</button>
-            <button className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all">NEXT</button>
+            <button 
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              PREVIOUS
+            </button>
+            <button 
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              NEXT
+            </button>
           </div>
         </div>
       </section>

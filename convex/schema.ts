@@ -109,4 +109,44 @@ export default defineSchema({
     createdAt: v.number(), // Timestamp
   }).index("by_customer", ["customerId"])
     .index("by_type", ["type"]),
+
+  caixaSessions: defineTable({
+    openedBy: v.string(), // User ID or Name
+    openedAt: v.number(), // Timestamp
+    closedAt: v.optional(v.number()), // Timestamp
+    openingAmount: v.number(),
+    status: v.string(), // "OPEN", "CLOSED"
+    expectedCash: v.number(), // Live computed field
+    countedCash: v.optional(v.number()),
+    variance: v.optional(v.number()),
+    totalCashSales: v.number(),
+    totalCashIn: v.number(),
+    totalCashOut: v.number(),
+    closingNote: v.optional(v.string()),
+  }).index("by_status", ["status"])
+    .index("by_openedAt", ["openedAt"]),
+
+  caixaMovements: defineTable({
+    sessionId: v.id("caixaSessions"),
+    type: v.string(), // "OPENING", "SALE", "CASH_IN", "CASH_OUT", "SALE_REVERSAL", "CLOSING", "ADJUSTMENT"
+    amount: v.number(),
+    referenceId: v.optional(v.string()), // orderId, paymentId, etc.
+    description: v.string(),
+    userId: v.string(),
+    timestamp: v.number(),
+    runningBalance: v.number(),
+  }).index("by_session", ["sessionId"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_type", ["type"]),
+
+  auditLogs: defineTable({
+    userId: v.string(),
+    timestamp: v.number(),
+    action: v.string(),
+    beforeValue: v.optional(v.any()),
+    afterValue: v.optional(v.any()),
+    referenceId: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+  }).index("by_timestamp", ["timestamp"])
+    .index("by_action", ["action"]),
 });

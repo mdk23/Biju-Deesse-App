@@ -41,6 +41,12 @@ export default function AppShell({ children }: AppShellProps) {
             <Link href="/sales" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/sales' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
               Sales
             </Link>
+            <Link href="/caixa" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/caixa' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
+              Caixa
+            </Link>
+            <Link href="/caixa-reports" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/caixa-reports' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
+              Caixa Reports
+            </Link>
           </div>
         </div>
 

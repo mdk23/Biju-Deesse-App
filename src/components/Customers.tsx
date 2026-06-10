@@ -788,17 +788,13 @@ export default function Customers() {
               {filteredCustomers.map(customer => {
                 const health = customer.customerHealth || 'Growing Client';
                 const scoreVal = customer.customerScore || 0;
-                const borderHue =
-                  scoreVal >= 90 ? 'border-purple-500' :
-                  scoreVal >= 75 ? 'border-emerald-500' :
-                  scoreVal >= 50 ? 'border-blue-500' : 'border-rose-500';
                 const tier = customer.financialTier || 'Regular';
                 const lvl  = customer.loyaltyLevel  || 'Bronze';
                 return (
                   <tr key={customer._id} className="hover:bg-white/40 transition-colors cursor-pointer" onClick={() => setSelectedCustomer(customer)}>
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 ${borderHue} shadow-md text-primary font-bold`}>
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shadow-md text-primary font-bold">
                           {customer.firstName.charAt(0)}{customer.lastName.charAt(0)}
                         </div>
                         <div>

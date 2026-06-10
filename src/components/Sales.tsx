@@ -45,7 +45,8 @@ import {
   Pie, 
   Cell,
   BarChart,
-  Bar
+  Bar,
+  Treemap
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -109,6 +110,13 @@ const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any
 );
 
 // --- Main Component ---
+
+const COLORS = [
+  '#8a4853', '#735c00', '#6e5371', '#d7c1c3', '#4a3b32', 
+  '#c2a38d', '#d4af37', '#6b4c41', '#9e7b6d', '#8c7b75', 
+  '#43323c', '#5c6b73', '#bda09a', '#d1cdcb', '#a88d75', 
+  '#554d48', '#8a9591', '#f3e5d8'
+];
 
 export default function Sales() {
   const router = useRouter();
@@ -232,6 +240,11 @@ export default function Sales() {
     
     // Valuation is overall product inventory value
     const estimatedValuation = products.reduce((acc, p) => acc + (p.costPrice * p.stock), 0);
+    const totalPending = filteredSales.reduce((acc, s) => {
+      const amountReceived = s.amountReceived || 0;
+      const pending = s.total - amountReceived;
+      return acc + (pending > 0 ? pending : 0);
+    }, 0);
 
     return {
       totalRevenue,
@@ -239,6 +252,7 @@ export default function Sales() {
       activeClients,
       avgTransaction,
       estimatedValuation,
+      totalPending,
     };
   }, [filteredSales, products]);
 
@@ -302,6 +316,12 @@ export default function Sales() {
     });
     const prevClientsCount = prevClientIds.size + (prevWalkIn > 0 ? 1 : 0);
 
+    const prevPending = prevSales.reduce((acc, s) => {
+      const amountReceived = s.amountReceived || 0;
+      const pending = s.total - amountReceived;
+      return acc + (pending > 0 ? pending : 0);
+    }, 0);
+
     const calculatePercentChange = (curr: number, prev: number) => {
       if (prev === 0) return curr > 0 ? 100 : 0;
       return Math.round(((curr - prev) / prev) * 1000) / 10;
@@ -311,7 +331,8 @@ export default function Sales() {
       revenue: calculatePercentChange(dynamicKPIs.totalRevenue, prevRevenue),
       profit: calculatePercentChange(dynamicKPIs.totalProfit, prevProfit),
       activeClients: calculatePercentChange(dynamicKPIs.activeClients, prevClientsCount),
-      avgTransaction: calculatePercentChange(dynamicKPIs.avgTransaction, prevAvg)
+      avgTransaction: calculatePercentChange(dynamicKPIs.avgTransaction, prevAvg),
+      totalPending: calculatePercentChange(dynamicKPIs.totalPending, prevPending),
     };
   }, [previousPeriodLimits, transactions, paymentFilter, tierFilter, minAmount, maxAmount, statusFilter, dynamicKPIs]);
 
@@ -462,12 +483,54 @@ export default function Sales() {
     return categories.sort((a, b) => b.value - a.value);
   }, [filteredSales, products]);
 
+  const dynamicPayoutDistribution = useMemo(() => {
+    const methodCounts: Record<string, number> = {};
+    let totalPaid = 0;
+
+    filteredSales.forEach(s => {
+      if (s.paymentBreakdown && s.paymentBreakdown.length > 0) {
+        s.paymentBreakdown.forEach((p: any) => {
+          methodCounts[p.method] = (methodCounts[p.method] || 0) + p.amount;
+          totalPaid += p.amount;
+        });
+      } else if (s.paymentMethod) {
+        methodCounts[s.paymentMethod] = (methodCounts[s.paymentMethod] || 0) + s.total;
+        totalPaid += s.total;
+      }
+    });
+
+    const methods = Object.entries(methodCounts).map(([name, amount], index) => ({
+      name,
+      amount,
+      value: totalPaid > 0 ? Math.round((amount / totalPaid) * 100) : 0,
+      fill: COLORS[index % COLORS.length]
+    }));
+
+    return methods.sort((a, b) => b.value - a.value);
+  }, [filteredSales]);
+
+  const topSellingItems = useMemo(() => {
+    const itemCounts: Record<string, { name: string, count: number }> = {};
+    
+    filteredSales.forEach(s => {
+      s.items.forEach((item: any) => {
+        if (!itemCounts[item.productId]) {
+          const p = products.find(prod => prod._id === item.productId);
+          itemCounts[item.productId] = { name: p?.name || item.name || 'Unknown', count: 0 };
+        }
+        itemCounts[item.productId].count += item.quantity;
+      });
+    });
+
+    return Object.values(itemCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [filteredSales, products]);
+
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
       .format(val)
       .replace('MZN', 'Mt');
-
-  const COLORS = ['#8a4853', '#735c00', '#6e5371', '#d7c1c3'];
 
   const handleRegisterSale = async () => {
     try {
@@ -748,7 +811,7 @@ export default function Sales() {
       </div>
 
       {/* KPI Section */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         <KPIStats 
           title="TOTAL REVENUE" 
           value={formatCurrency(dynamicKPIs.totalRevenue)} 
@@ -766,12 +829,12 @@ export default function Sales() {
           sparklineData={getSparklineData('profit')}
         />
         <KPIStats 
-          title="ACTIVE CLIENTS" 
-          value={dynamicKPIs.activeClients.toString()} 
-          trend={trends.activeClients} 
-          icon={CreditCard} 
-          color="tertiary" 
-          sparklineData={getSparklineData('count')}
+          title="TOTAL PENDING" 
+          value={formatCurrency(dynamicKPIs.totalPending)} 
+          trend={trends.totalPending} 
+          icon={AlertCircle} 
+          color="error" 
+          sparklineData={getSparklineData('total')}
         />
         <KPIStats 
           title="AVG TRANSACTION" 
@@ -780,14 +843,6 @@ export default function Sales() {
           icon={ShoppingBag} 
           color="primary" 
           sparklineData={getSparklineData('total')}
-        />
-        <KPIStats 
-          title="VALUATION" 
-          value={formatCurrency(dynamicKPIs.estimatedValuation)} 
-          trend={5.8} 
-          icon={BarChart3} 
-          color="secondary" 
-          sparklineData={[{value: 10}, {value: 20}, {value: 15}, {value: 25}, {value: 30}, {value: 40}]}
         />
       </div>
 
@@ -848,9 +903,55 @@ export default function Sales() {
             {dynamicCategoryDistribution.map((entry: any, i: number) => (
               <div key={entry.name} className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name}</span>
+                <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name} ({entry.value}%)</span>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+        <div className="glass-panel p-8 rounded-3xl border border-white/50 flex flex-col">
+          <h3 className="font-headline-md text-xl text-primary mb-2">Payout Methods</h3>
+          <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">TENDER DISTRIBUTION</p>
+          <div className="flex-1 flex flex-col justify-center items-center relative">
+            <ResponsiveContainer width="100%" height={240}>
+              <Treemap
+                data={dynamicPayoutDistribution}
+                dataKey="amount"
+                stroke="#fff"
+                isAnimationActive={false}
+              >
+                <Tooltip formatter={(value: any) => formatCurrency(Number(value) || 0)} />
+              </Treemap>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-8 grid grid-cols-2 gap-4">
+            {dynamicPayoutDistribution.map((entry: any, i: number) => (
+              <div key={entry.name} className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name} ({entry.value}%)</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass-panel p-8 rounded-3xl border border-white/50 flex flex-col">
+          <h3 className="font-headline-md text-xl text-primary mb-2">Top 5 Selling Items</h3>
+          <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">MOST POPULAR PIECES</p>
+          <div className="flex-1 h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topSellingItems} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e2de" />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} width={120} />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
+                  contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                />
+                <Bar dataKey="count" fill="#8a4853" radius={[0, 4, 4, 0]} barSize={24} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
