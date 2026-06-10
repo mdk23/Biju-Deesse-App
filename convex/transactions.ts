@@ -77,7 +77,7 @@ export const create = mutation({
         .first();
 
       if (!openSession) {
-        throw new Error("Cannot process cash payment. No Caixa session open.");
+        throw new ConvexError("Cannot process cash payment. No Caixa session open. Please go to Caixa and open a session first.");
       }
 
       const sessionDate = new Date(openSession.openedAt);
@@ -87,7 +87,7 @@ export const create = mutation({
         sessionDate.getMonth() !== today.getMonth() ||
         sessionDate.getFullYear() !== today.getFullYear()
       ) {
-        throw new Error("Caixa Session from previous day is still open. Please close it and open a new session for today.");
+        throw new ConvexError("Caixa Session from previous day is still open. Please close it and open a new session for today.");
       }
     }
 

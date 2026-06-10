@@ -25,29 +25,7 @@ export default function AppShell({ children }: AppShellProps) {
             menu
           </button>
           <span className="font-headline-md text-headline-md font-semibold text-primary tracking-tight">Biju Deesse</span>
-          <div className="hidden md:flex gap-6">
-            <Link href="/" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Dashboard
-            </Link>
-            <Link href="/pos" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/pos' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              POS
-            </Link>
-            <Link href="/inventory" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/inventory' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Inventory
-            </Link>
-            <Link href="/customers" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/customers' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Customers
-            </Link>
-            <Link href="/sales" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/sales' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Sales
-            </Link>
-            <Link href="/caixa" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/caixa' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Caixa
-            </Link>
-            <Link href="/caixa-reports" className={`font-label-caps text-label-caps py-5 px-2 transition-colors ${pathname === '/caixa-reports' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:bg-white/20'}`}>
-              Caixa Reports
-            </Link>
-          </div>
+
         </div>
 
         <div className="flex items-center gap-4">

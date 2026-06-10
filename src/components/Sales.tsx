@@ -880,24 +880,31 @@ export default function Sales() {
           <h3 className="font-headline-md text-xl text-primary mb-2">Category Performance</h3>
           <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">SALES DISTRIBUTION</p>
           <div className="flex-1 flex flex-col justify-center items-center relative">
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={dynamicCategoryDistribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={8}
-                  dataKey="value"
-                >
-                  {dynamicCategoryDistribution.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {dynamicCategoryDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie
+                    data={dynamicCategoryDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={8}
+                    dataKey="value"
+                  >
+                    {dynamicCategoryDistribution.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-outline/50 flex flex-col items-center justify-center h-full">
+                <span className="material-symbols-outlined text-4xl mb-2">pie_chart</span>
+                <p className="text-sm font-label-caps">No data</p>
+              </div>
+            )}
           </div>
           <div className="mt-8 grid grid-cols-2 gap-4">
             {dynamicCategoryDistribution.map((entry: any, i: number) => (
@@ -915,16 +922,23 @@ export default function Sales() {
           <h3 className="font-headline-md text-xl text-primary mb-2">Payout Methods</h3>
           <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">TENDER DISTRIBUTION</p>
           <div className="flex-1 flex flex-col justify-center items-center relative">
-            <ResponsiveContainer width="100%" height={240}>
-              <Treemap
-                data={dynamicPayoutDistribution}
-                dataKey="amount"
-                stroke="#fff"
-                isAnimationActive={false}
-              >
-                <Tooltip formatter={(value: any) => formatCurrency(Number(value) || 0)} />
-              </Treemap>
-            </ResponsiveContainer>
+            {dynamicPayoutDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <Treemap
+                  data={dynamicPayoutDistribution}
+                  dataKey="amount"
+                  stroke="#fff"
+                  isAnimationActive={false}
+                >
+                  <Tooltip formatter={(value: any) => formatCurrency(Number(value) || 0)} />
+                </Treemap>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-outline/50 flex flex-col items-center justify-center h-full">
+                <span className="material-symbols-outlined text-4xl mb-2">account_balance_wallet</span>
+                <p className="text-sm font-label-caps">No data</p>
+              </div>
+            )}
           </div>
           <div className="mt-8 grid grid-cols-2 gap-4">
             {dynamicPayoutDistribution.map((entry: any, i: number) => (
@@ -940,18 +954,25 @@ export default function Sales() {
           <h3 className="font-headline-md text-xl text-primary mb-2">Top 5 Selling Items</h3>
           <p className="font-label-caps text-[9px] text-outline tracking-widest mb-10">MOST POPULAR PIECES</p>
           <div className="flex-1 h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topSellingItems} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e2de" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} width={120} />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
-                  contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
-                />
-                <Bar dataKey="count" fill="#8a4853" radius={[0, 4, 4, 0]} barSize={24} />
-              </BarChart>
-            </ResponsiveContainer>
+            {topSellingItems.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topSellingItems} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e2de" />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} width={120} />
+                  <Tooltip 
+                    cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                  />
+                  <Bar dataKey="count" fill="#8a4853" radius={[0, 4, 4, 0]} barSize={24} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-outline/50 flex flex-col items-center justify-center h-full">
+                <span className="material-symbols-outlined text-4xl mb-2">bar_chart</span>
+                <p className="text-sm font-label-caps">No data</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

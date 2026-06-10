@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function POS() {
   const products = useQuery(api.products.list, { archived: false }) || [];
   const customers = useQuery(api.customers.list) || [];
+  const activeSession = useQuery(api.caixa.getActiveSession);
 
   const createTransaction = useMutation(api.transactions.create);
 
@@ -185,6 +186,23 @@ export default function POS() {
       }
     }
 
+    // Caixa validation
+    const hasCashPayment = paymentEntries.some(p => p.method.toLowerCase() === "cash" && parseFloat(p.amount) > 0);
+    if (hasCashPayment) {
+      if (activeSession === undefined) {
+        toast.error("Checking Caixa session status... Please wait.");
+        return;
+      }
+      if (activeSession === null) {
+        toast.error("Cannot process cash payment. No Caixa session open. Please go to Caixa and open a session first.");
+        return;
+      }
+      if (activeSession.isExpired) {
+        toast.error("Caixa Session from previous day is still open. Please close it and open a new session for today.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -230,8 +248,14 @@ export default function POS() {
       setSelectedCustomerId(null);
       setCustomerSearch("");
     } catch (err: any) {
-      const errorMessage = err.data || err.message || "Failed to complete transaction.";
-      toast.error(typeof errorMessage === 'string' ? errorMessage : "Failed to complete transaction.");
+      console.error("Transaction Error:", err);
+      let errorMessage = "Failed to complete transaction.";
+      if (err.data) {
+        errorMessage = typeof err.data === 'string' ? err.data : JSON.stringify(err.data);
+      } else if (err.message) {
+        errorMessage = err.message.replace(/Uncaught Error: |\[ConvexError\] /g, "");
+      }
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
