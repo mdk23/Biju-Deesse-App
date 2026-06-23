@@ -179,7 +179,7 @@ export default function Sales() {
     return transactions.filter(s => {
       // 1. Search Query (Invoice / Cashier / Customer Name)
       const customerName = s.customerName || "Walk-in";
-      const matchesSearch = s.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      const matchesSearch = (s.receiptNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (s.cashierName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                            customerName.toLowerCase().includes(searchQuery.toLowerCase());
       

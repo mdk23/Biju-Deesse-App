@@ -48,7 +48,7 @@ export const upsert = mutation({
       // Increment global counter
       const globalCounter = await ctx.db
         .query("globalCounters")
-        .withIndex("by_id", (q) => q.eq("id", "main"))
+        .filter((q) => q.eq(q.field("id"), "main"))
         .first();
       if (globalCounter) {
         await ctx.db.patch(globalCounter._id, {
@@ -70,7 +70,7 @@ export const remove = mutation({
     // Decrement global counter
     const globalCounter = await ctx.db
       .query("globalCounters")
-      .withIndex("by_id", (q) => q.eq("id", "main"))
+      .filter((q) => q.eq(q.field("id"), "main"))
       .first();
     if (globalCounter) {
       await ctx.db.patch(globalCounter._id, {
