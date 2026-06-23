@@ -194,11 +194,11 @@ export default function POS() {
         return;
       }
       if (activeSession === null) {
-        toast.error("Cannot process cash payment. No Caixa session open. Please go to Caixa and open a session first.");
+        toast.warning("Cannot process cash payment. No Caixa session open. Please go to Caixa and open a session first.");
         return;
       }
       if (activeSession.isExpired) {
-        toast.error("Caixa Session from previous day is still open. Please close it and open a new session for today.");
+        toast.warning("Caixa Session from previous day is still open. Please close it and open a new session for today.");
         return;
       }
     }

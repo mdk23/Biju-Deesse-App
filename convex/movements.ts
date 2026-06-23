@@ -3,7 +3,7 @@ import { query } from "./_generated/server";
 
 export const list = query({
   handler: async (ctx) => {
-    return await ctx.db.query("inventoryMovements").order("desc").collect();
+    return await ctx.db.query("inventoryMovements").order("desc").take(100);
   },
 });
 
@@ -14,14 +14,14 @@ export const getForProduct = query({
       .query("inventoryMovements")
       .withIndex("by_product", (q) => q.eq("productId", args.productId))
       .order("desc")
-      .collect();
+      .take(500);
   },
 });
 
 // Analytics: Detect anomalies (e.g., large manual corrections or rapid stock drop)
 export const getAnomalies = query({
   handler: async (ctx) => {
-    const movements = await ctx.db.query("inventoryMovements").collect();
+    const movements = await ctx.db.query("inventoryMovements").order("desc").take(500);
     // Simple logic: Movements of Type "Damage" or Manual Correction > 10 units
     return movements.filter(m => 
       (m.movementType === "Damage" || m.movementType === "Manual Correction") && Math.abs(m.quantity) > 5

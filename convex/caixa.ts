@@ -47,7 +47,7 @@ export const getSessionMovements = query({
       .query("caixaMovements")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .order("desc")
-      .collect();
+      .take(500);
   },
 });
 
@@ -219,7 +219,7 @@ export const getCaixaReports = query({
   handler: async (ctx, args) => {
     // Collect sessions
     let sessionsQuery = ctx.db.query("caixaSessions");
-    const sessions = await sessionsQuery.order("desc").collect();
+    const sessions = await sessionsQuery.order("desc").take(500);
 
     // Filter by date if provided
     const filtered = sessions.filter(s => {

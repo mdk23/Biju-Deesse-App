@@ -4,7 +4,7 @@ import { recomputeCustomerIntelligence } from "./intelligence";
 
 export const list = query({
   handler: async (ctx) => {
-    return await ctx.db.query("customers").collect();
+    return await ctx.db.query("customers").order("desc").take(100);
   },
 });
 
@@ -44,6 +44,17 @@ export const upsert = mutation({
         totalSpent: 0,
         orderCount: 0,
       });
+
+      // Increment global counter
+      const globalCounter = await ctx.db
+        .query("globalCounters")
+        .withIndex("by_id", (q) => q.eq("id", "main"))
+        .first();
+      if (globalCounter) {
+        await ctx.db.patch(globalCounter._id, {
+          activeClients: (globalCounter.activeClients || 0) + 1,
+        });
+      }
     }
 
     await recomputeCustomerIntelligence(ctx.db, customerId);
@@ -55,6 +66,17 @@ export const remove = mutation({
   args: { id: v.id("customers") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
+
+    // Decrement global counter
+    const globalCounter = await ctx.db
+      .query("globalCounters")
+      .withIndex("by_id", (q) => q.eq("id", "main"))
+      .first();
+    if (globalCounter) {
+      await ctx.db.patch(globalCounter._id, {
+        activeClients: Math.max(0, (globalCounter.activeClients || 0) - 1),
+      });
+    }
   },
 });
 
@@ -67,7 +89,7 @@ export const getTopSpenders = query({
     return await ctx.db
       .query("customers")
       .withIndex("by_last_name") 
-      .collect()
+      .take(1000)
       .then((customers) => 
         customers
           .sort((a, b) => b.totalSpent - a.totalSpent)

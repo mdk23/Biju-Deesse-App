@@ -42,7 +42,7 @@ export default defineSchema({
 
   transactions: defineTable({
     customerId: v.optional(v.id("customers")),
-    receiptNumber: v.string(),
+    receiptNumber: v.optional(v.string()),
     subtotal: v.number(),
     discount: v.number(),
     taxes: v.number(),
@@ -63,6 +63,8 @@ export default defineSchema({
         productId: v.id("products"),
         quantity: v.number(),
         price: v.number(), // Price at time of sale
+        name: v.optional(v.string()), // Denormalized product name
+        photo: v.optional(v.string()), // Denormalized product image
       })
     ),
     refundedAmount: v.number(),
@@ -70,6 +72,8 @@ export default defineSchema({
     changeGiven: v.optional(v.number()),
     changeHandling: v.optional(v.string()),
     notes: v.optional(v.string()),
+    customerName: v.optional(v.string()), // Denormalized customer name
+    customerTier: v.optional(v.string()), // Denormalized customer tier
   }).index("by_receipt", ["receiptNumber"])
     .index("by_customer", ["customerId"]),
 
@@ -149,4 +153,24 @@ export default defineSchema({
     ipAddress: v.optional(v.string()),
   }).index("by_timestamp", ["timestamp"])
     .index("by_action", ["action"]),
+
+  dailyStats: defineTable({
+    date: v.string(), // "YYYY-MM-DD" format
+    totalRevenue: v.number(),
+    totalProfit: v.number(),
+    transactionCount: v.number(),
+    itemsSold: v.number(),
+    totalPending: v.optional(v.number()),
+    paymentsByMethod: v.optional(v.any()),
+    salesByCategory: v.optional(v.any()),
+  }).index("by_date", ["date"]),
+
+  globalCounters: defineTable({
+    id: v.string(), // e.g. "main"
+    transactionCount: v.number(),
+    totalRevenue: v.number(),
+    totalProfit: v.number(),
+    activeClients: v.number(),
+    inventoryValuation: v.optional(v.number()),
+  }).index("by_id", ["id"]),
 });

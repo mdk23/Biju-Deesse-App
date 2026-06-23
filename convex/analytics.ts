@@ -1,90 +1,91 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { normalizePaymentMethod } from "./utils";
 
 export const getExecutiveBrief = query({
   args: { period: v.optional(v.string()) }, // "today", "yesterday", "this_week"
   handler: async (ctx, args) => {
-    const products = await ctx.db.query("products").collect();
-    const customers = await ctx.db.query("customers").collect();
-    const transactions = await ctx.db.query("transactions").collect();
+    const globalCounter = await ctx.db.query("globalCounters").filter((q) => q.eq(q.field("id"), "main")).first();
+    const activeClients = globalCounter?.activeClients || 0;
+    const estimatedValuation = globalCounter?.inventoryValuation || 0;
 
-    // Determine timestamp range based on the selected period
     const period = args.period || "today";
     const now = new Date();
     
-    // Start of today:
+    // Calculate dates
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const todayTimestamp = startOfToday.getTime();
+    const todayStr = startOfToday.toISOString().split("T")[0];
 
-    // Start of yesterday:
     const startOfYesterday = new Date(now);
     startOfYesterday.setDate(startOfYesterday.getDate() - 1);
     startOfYesterday.setHours(0, 0, 0, 0);
     const yesterdayTimestamp = startOfYesterday.getTime();
+    const yesterdayStr = startOfYesterday.toISOString().split("T")[0];
 
-    // Start of two days ago:
     const startOfTwoDaysAgo = new Date(now);
     startOfTwoDaysAgo.setDate(startOfTwoDaysAgo.getDate() - 2);
     startOfTwoDaysAgo.setHours(0, 0, 0, 0);
     const twoDaysAgoTimestamp = startOfTwoDaysAgo.getTime();
+    const twoDaysAgoStr = startOfTwoDaysAgo.toISOString().split("T")[0];
 
-    // Start of this week (assume Monday is the start of the week):
     const startOfThisWeek = new Date(now);
     const day = startOfThisWeek.getDay();
     const diff = startOfThisWeek.getDate() - day + (day === 0 ? -6 : 1);
     startOfThisWeek.setDate(diff);
     startOfThisWeek.setHours(0, 0, 0, 0);
     const thisWeekTimestamp = startOfThisWeek.getTime();
+    const thisWeekStr = startOfThisWeek.toISOString().split("T")[0];
 
-    // Start of last week:
     const startOfLastWeek = new Date(startOfThisWeek);
     startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
     const lastWeekTimestamp = startOfLastWeek.getTime();
+    const lastWeekStr = startOfLastWeek.toISOString().split("T")[0];
 
-    // Filter transactions for current and previous period
-    let periodTransactions: typeof transactions = [];
-    let prevTransactions: typeof transactions = [];
+    let oldestNeededStr = yesterdayStr;
+    if (period === "yesterday") oldestNeededStr = twoDaysAgoStr;
+    if (period === "this_week") oldestNeededStr = lastWeekStr;
+
+    // Only fetch dailyStats from the oldest needed period
+    const stats = await ctx.db
+      .query("dailyStats")
+      .withIndex("by_date", (q) => q.gte("date", oldestNeededStr))
+      .collect();
+
+    // Filter stats for current and previous period
+    let periodStats: typeof stats = [];
+    let prevStats: typeof stats = [];
 
     if (period === "today") {
-      periodTransactions = transactions.filter((tx) => tx._creationTime >= todayTimestamp);
-      prevTransactions = transactions.filter((tx) => tx._creationTime >= yesterdayTimestamp && tx._creationTime < todayTimestamp);
+      periodStats = stats.filter((s) => s.date >= todayStr);
+      prevStats = stats.filter((s) => s.date >= yesterdayStr && s.date < todayStr);
     } else if (period === "yesterday") {
-      periodTransactions = transactions.filter((tx) => tx._creationTime >= yesterdayTimestamp && tx._creationTime < todayTimestamp);
-      prevTransactions = transactions.filter((tx) => tx._creationTime >= twoDaysAgoTimestamp && tx._creationTime < yesterdayTimestamp);
+      periodStats = stats.filter((s) => s.date >= yesterdayStr && s.date < todayStr);
+      prevStats = stats.filter((s) => s.date >= twoDaysAgoStr && s.date < yesterdayStr);
     } else if (period === "this_week") {
-      periodTransactions = transactions.filter((tx) => tx._creationTime >= thisWeekTimestamp);
-      prevTransactions = transactions.filter((tx) => tx._creationTime >= lastWeekTimestamp && tx._creationTime < thisWeekTimestamp);
+      periodStats = stats.filter((s) => s.date >= thisWeekStr);
+      prevStats = stats.filter((s) => s.date >= lastWeekStr && s.date < thisWeekStr);
     } else {
-      periodTransactions = transactions;
-      prevTransactions = [];
+      periodStats = stats;
+      prevStats = [];
     }
 
-    const totalRevenue = periodTransactions.reduce((acc, tx) => acc + tx.total, 0);
-    const totalProfit = periodTransactions.reduce((acc, tx) => acc + tx.profit, 0);
-    const activeClients = customers.length;
-    
-    // Calculate total pending for transactions in this period
-    const totalPending = periodTransactions.reduce((acc, tx) => {
-      const totalPaid = tx.paymentBreakdown.reduce((sum: number, p: { amount: number }) => sum + p.amount, 0);
-      return acc + Math.max(0, tx.total - totalPaid);
-    }, 0);
-
-    const avgSales = periodTransactions.length > 0 ? (totalRevenue / periodTransactions.length) : 0;
+    const totalRevenue = periodStats.reduce((acc, s) => acc + s.totalRevenue, 0);
+    const totalProfit = periodStats.reduce((acc, s) => acc + s.totalProfit, 0);
+    const totalPending = periodStats.reduce((acc, s) => acc + (s.totalPending || 0), 0);
+    const totalTxCount = periodStats.reduce((acc, s) => acc + s.transactionCount, 0);
+    const avgSales = totalTxCount > 0 ? (totalRevenue / totalTxCount) : 0;
 
     // Previous period stats for trend calculation
-    const prevRevenue = prevTransactions.reduce((acc, tx) => acc + tx.total, 0);
-    const prevProfit = prevTransactions.reduce((acc, tx) => acc + tx.profit, 0);
-    const prevPending = prevTransactions.reduce((acc, tx) => {
-      const totalPaid = tx.paymentBreakdown.reduce((sum: number, p: { amount: number }) => sum + p.amount, 0);
-      return acc + Math.max(0, tx.total - totalPaid);
-    }, 0);
-    const prevAvgSales = prevTransactions.length > 0 ? (prevRevenue / prevTransactions.length) : 0;
+    const prevRevenue = prevStats.reduce((acc, s) => acc + s.totalRevenue, 0);
+    const prevProfit = prevStats.reduce((acc, s) => acc + s.totalProfit, 0);
+    const prevPending = prevStats.reduce((acc, s) => acc + (s.totalPending || 0), 0);
+    const prevTxCount = prevStats.reduce((acc, s) => acc + s.transactionCount, 0);
+    const prevAvgSales = prevTxCount > 0 ? (prevRevenue / prevTxCount) : 0;
 
     const calculateTrend = (current: number, previous: number) => {
-      if (previous === 0) {
-        return current > 0 ? 100 : 0;
-      }
+      if (previous === 0) return current > 0 ? 100 : 0;
       return Math.round(((current - previous) / previous) * 1000) / 10;
     };
 
@@ -94,22 +95,17 @@ export const getExecutiveBrief = query({
       pending: calculateTrend(totalPending, prevPending),
       avgSales: calculateTrend(avgSales, prevAvgSales),
     };
-    
-    // Valuation: Sum of cost price * stock
-    const estimatedValuation = products.reduce((acc, p) => acc + (p.costPrice * p.stock), 0);
-
-    // Product category map
-    const productCategoryMap = new Map(products.map(p => [p._id, p.category]));
 
     // Categories Distribution based on items sold
     const soldCategoryStats: Record<string, number> = {};
     let totalItemsSold = 0;
-    for (const tx of periodTransactions) {
-      for (const item of tx.items || []) {
-        const category = productCategoryMap.get(item.productId) || "Unknown";
-        soldCategoryStats[category] = (soldCategoryStats[category] || 0) + item.quantity;
-        totalItemsSold += item.quantity;
+    for (const stat of periodStats) {
+      if (stat.salesByCategory) {
+        for (const [cat, qty] of Object.entries(stat.salesByCategory)) {
+          soldCategoryStats[cat] = (soldCategoryStats[cat] || 0) + (qty as number);
+        }
       }
+      totalItemsSold += stat.itemsSold;
     }
 
     const categoryDistribution = Object.entries(soldCategoryStats).map(([name, qty]) => ({
@@ -129,21 +125,20 @@ export const getExecutiveBrief = query({
 
     let totalPaymentReceived = 0;
 
-    for (const tx of periodTransactions) {
-      for (const payment of tx.paymentBreakdown || []) {
-        const method = payment.method;
-        let targetKey: keyof typeof paymentMethods = "Cash";
-
-        if (method === "M-Pesa") targetKey = "M-Pesa";
-        else if (method === "e-Mola") targetKey = "e-Mola";
-        else if (method === "BCI") targetKey = "BCI";
-        else if (method === "BIM Cash" || method === "BIM") targetKey = "BIM Cash";
-        else if (method === "Card") targetKey = "Card";
-        else targetKey = "Cash";
-
-        paymentMethods[targetKey].amount += payment.amount;
-        paymentMethods[targetKey].count += 1;
-        totalPaymentReceived += payment.amount;
+    for (const stat of periodStats) {
+      if (stat.paymentsByMethod) {
+        for (const [rawMethod, amount] of Object.entries(stat.paymentsByMethod)) {
+          const method = normalizePaymentMethod(rawMethod);
+          if (paymentMethods[method as keyof typeof paymentMethods]) {
+            paymentMethods[method as keyof typeof paymentMethods].amount += (amount as number);
+            paymentMethods[method as keyof typeof paymentMethods].count += 1;
+            totalPaymentReceived += (amount as number);
+          } else {
+             paymentMethods["Cash"].amount += (amount as number);
+             paymentMethods["Cash"].count += 1;
+             totalPaymentReceived += (amount as number);
+          }
+        }
       }
     }
 
@@ -171,7 +166,8 @@ export const getExecutiveBrief = query({
 export const getRevenueByPeriod = query({
   args: { period: v.string() }, // "weekly", "monthly"
   handler: async (ctx, args) => {
-    const transactions = await ctx.db.query("transactions").collect();
+    // Only fetch recent transactions using take to prevent full scan
+    const transactions = await ctx.db.query("transactions").order("desc").take(500);
     
     // Mocking a week of aggregate data for now since we don't have enough history
     // In a real app, we'd group transactions by _creationTime
@@ -186,7 +182,7 @@ export const getRevenueByPeriod = query({
 
 export const getInventoryAging = query({
   handler: async (ctx) => {
-    const products = await ctx.db.query("products").collect();
+    const products = await ctx.db.query("products").take(500);
     // Dead stock: Stock > 0 and no sales movement in last 30 days
     // This requires cross-referencing movements, making it a bit more complex
     return products.filter(p => p.stock > p.reorderLevel * 2); // Simple proxy for now

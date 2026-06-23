@@ -9,7 +9,7 @@ export const list = query({
     return await ctx.db
       .query("products")
       .filter((q) => q.eq(q.field("archived"), archivedStatus))
-      .collect();
+      .take(500);
   },
 });
 
@@ -38,18 +38,53 @@ export const upsert = mutation({
   },
   handler: async (ctx, args) => {
     const { id, ...data } = args;
+    let valueDiff = 0;
+    let idToReturn = id;
+
     if (id) {
+      const existing = await ctx.db.get(id);
+      if (existing) {
+        valueDiff = (data.costPrice * data.stock) - (existing.costPrice * existing.stock);
+      }
       await ctx.db.patch(id, data);
-      return id;
     } else {
-      return await ctx.db.insert("products", data);
+      valueDiff = data.costPrice * data.stock;
+      idToReturn = await ctx.db.insert("products", data);
     }
+
+    if (valueDiff !== 0) {
+      const globalCounter = await ctx.db
+        .query("globalCounters")
+        .filter((q) => q.eq(q.field("id"), "main"))
+        .first();
+      if (globalCounter) {
+        await ctx.db.patch(globalCounter._id, {
+          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
+        });
+      }
+    }
+
+    return idToReturn;
   },
 });
 
 export const remove = mutation({
   args: { id: v.id("products") },
   handler: async (ctx, args) => {
+    const product = await ctx.db.get(args.id);
+    if (product) {
+      const valueDiff = -(product.costPrice * product.stock);
+      
+      const globalCounter = await ctx.db
+        .query("globalCounters")
+        .filter((q) => q.eq(q.field("id"), "main"))
+        .first();
+      if (globalCounter) {
+        await ctx.db.patch(globalCounter._id, {
+          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
+        });
+      }
+    }
     await ctx.db.delete(args.id);
   },
 });
@@ -83,6 +118,19 @@ export const adjustStock = mutation({
       createdAt: Date.now(),
     });
 
+    const valueDiff = args.quantity * product.costPrice;
+    if (valueDiff !== 0) {
+      const globalCounter = await ctx.db
+        .query("globalCounters")
+        .filter((q) => q.eq(q.field("id"), "main"))
+        .first();
+      if (globalCounter) {
+        await ctx.db.patch(globalCounter._id, {
+          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
+        });
+      }
+    }
+
     return newStock;
   },
 });
@@ -98,14 +146,14 @@ export const getLowStock = query({
           q.lte(q.field("stock"), q.field("reorderLevel"))
         )
       )
-      .collect();
+      .take(500);
   },
 });
 
 export const getInventoryAnalytics = query({
   handler: async (ctx) => {
-    const products = await ctx.db.query("products").filter(q => q.eq(q.field("archived"), false)).collect();
-    const movements = await ctx.db.query("inventoryMovements").collect();
+    const products = await ctx.db.query("products").filter(q => q.eq(q.field("archived"), false)).take(1000);
+    const movements = await ctx.db.query("inventoryMovements").order("desc").take(1000);
     
     const now = Date.now();
     const sixMonthsAgo = now - (180 * 24 * 60 * 60 * 1000);
