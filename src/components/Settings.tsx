@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { KeyRound, UserPlus, Users, Save, Loader2, Shield } from "lucide-react";
@@ -172,9 +173,8 @@ function UserManagementSection() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      // @ts-ignore
       await createUser({
-        creatorId: user!._id,
+        creatorId: user!._id as Id<"users">,
         newUsername: username,
         newPassword: password,
         newRole: role,
