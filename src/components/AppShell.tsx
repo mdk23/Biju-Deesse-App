@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from './AuthProvider';
 
 type AppShellProps = {
   children: ReactNode;
@@ -13,6 +14,10 @@ export default function AppShell({ children }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const pathname = usePathname() || '/';
+  const { logout, user } = useAuth();
+  
+  const firstLetter = user?.name ? user.name.charAt(0).toUpperCase() : user?.username?.charAt(0).toUpperCase() || '?';
+  const displayName = user?.name || user?.username || 'User';
 
   return (
     <div className="bg-atelier-gradient min-h-screen text-on-surface font-body-md overflow-x-hidden">
@@ -29,27 +34,15 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
 
         <div className="flex items-center gap-4">
-          {pathname !== '/inventory' && (
-            <>
-              <div className="relative hidden sm:block">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
-                <input
-                  className="bg-transparent border-none border-b border-outline-variant/50 pl-10 pr-4 py-2 font-label-caps text-label-caps rose-gold-glow focus:ring-0 w-64"
-                  placeholder="SEARCH PIECES..."
-                  type="text"
-                />
-              </div>
-              <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">notifications</button>
-              <button className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors">settings</button>
-            </>
-          )}
-          <div className="w-8 h-8 rounded-full bg-primary-fixed overflow-hidden border border-white/50">
-            <img
-              alt="Administrator Profile"
-              className="w-full h-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDG8wWaKFgD0uTXFbnvchZJy0-eG660VOqYzQxMa5YCu6bCHft93k7vzz42bwF3R-vYnLc8fpE4x8-Q-8Qd642UfSWCsPAMQ6Vb-37fS6NfqqthHDsgwZOV2Fj47v_aRwyt7rL4PNgVOJPvKHpSiCzP7-YnYt0E0XJ5izee0bptXFIeuvdPAGrwIgCllEq6k4Thsi3lx8w9VX84KkMtmQhNV4az3whfvIF8hdelYEauxw8GknxnTi89Lq3KWb0SMaWFNwquzqEWmy8"
-            />
+          <div 
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-primary text-on-primary font-label-caps font-bold cursor-default shadow-sm hover:scale-105 transition-transform"
+            title={displayName}
+          >
+            {firstLetter}
           </div>
+          {pathname !== '/inventory' && (
+            <button onClick={logout} className="material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors" title="Logout">logout</button>
+          )}
         </div>
       </header>
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Playfair_Display, Manrope } from "next/font/google";
 import "./globals.css";
+import localFont from "next/font/local";
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
@@ -12,6 +13,22 @@ const manrope = Manrope({
   subsets: ["latin"],
 });
 
+
+const rcDemo = localFont({
+  src: "../../public/fonts/rc.otf",
+  variable: "--font-rc",
+});
+
+const agathaItalic = localFont({
+  src: "../../public/fonts/agathaitalic.ttf",
+  variable: "--font-agatha-italic",
+});
+
+const agathaRegular = localFont({
+  src: "../../public/fonts/agatharegular.ttf",
+  variable: "--font-agatha-regular",
+});
+
 export const metadata: Metadata = {
   title: "Biju Deesse | Analytics Dashboard",
   description: " ERP Suite for Jewelry Management",
@@ -21,6 +38,8 @@ import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 
 import { Toaster } from "sonner";
 
+import { AuthProvider } from "@/components/AuthProvider";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,7 +48,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${playfairDisplay.variable} ${manrope.variable} h-full antialiased`}
+      className={`${playfairDisplay.variable} ${manrope.variable} ${rcDemo.variable} ${agathaItalic.variable} ${agathaRegular.variable} h-full antialiased`}
     >
       <head>
         <link
@@ -39,7 +58,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <ConvexClientProvider>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
           <Toaster position="top-center" richColors />
         </ConvexClientProvider>
       </body>

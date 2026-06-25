@@ -188,6 +188,20 @@ export const addMovement = mutation({
 
     await ctx.db.patch(args.sessionId, patch);
 
+    const todayStr = new Date().toISOString().split("T")[0];
+    const dailyStat = await ctx.db
+      .query("dailyStats")
+      .withIndex("by_date", (q) => q.eq("date", todayStr))
+      .first();
+
+    if (dailyStat) {
+      if (args.type === "CASH_IN") {
+        await ctx.db.patch(dailyStat._id, { cashIn: (dailyStat.cashIn || 0) + args.amount });
+      } else if (args.type === "CASH_OUT") {
+        await ctx.db.patch(dailyStat._id, { cashOut: (dailyStat.cashOut || 0) + args.amount });
+      }
+    }
+
     const movementId = await ctx.db.insert("caixaMovements", {
       sessionId: args.sessionId,
       type: args.type,

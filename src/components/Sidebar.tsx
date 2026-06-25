@@ -17,6 +17,7 @@ const navItems = [
   { href: '/inventory', icon: 'inventory_2', label: 'Inventory' },
   { href: '/customers', icon: 'people', label: 'Customers' },
   { href: '/sales', icon: 'trending_up', label: 'Sales' },
+  { href: '/settings', icon: 'settings', label: 'Settings' },
 ];
 
 export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: SidebarProps) {
@@ -53,14 +54,6 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
         })}
       </nav>
 
-      <div className={`px-6 mt-auto ${collapsed ? 'px-3' : ''}`}>
-        <button className={`w-full py-4 bg-primary text-on-primary font-label-caps text-label-caps rounded-xl shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 ${collapsed ? 'px-2' : ''}`}>
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: '"FILL" 1' }}>
-            add_circle
-          </span>
-          {!collapsed && 'New Appraisals'}
-        </button>
-      </div>
 
       <button
         onClick={onToggleCollapse}

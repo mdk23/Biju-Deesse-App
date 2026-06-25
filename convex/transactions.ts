@@ -4,6 +4,51 @@ import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { reconcileBalances } from "./ledgerHelpers";
 import { validateCaixaForCash, recordCaixaCash } from "./caixaHelpers";
+import { updateDailyMovementStats } from "./utils";
+
+async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: number, diffDebt?: number, diffOverdue?: number, diffOverdueAccounts?: number, recoveredDebt?: number, creditUsed?: number }) {
+  const now = new Date();
+  const monthStr = now.toISOString().slice(0, 7);
+
+  const mainCounter = await ctx.db.query("financialCounters").withIndex("by_counter_id", (q: any) => q.eq("id", "main")).first();
+  if (mainCounter) {
+    await ctx.db.patch(mainCounter._id, {
+      totalCustomerCredit: Math.max(0, mainCounter.totalCustomerCredit + (args.diffCredit || 0)),
+      totalCustomerDebt: Math.max(0, mainCounter.totalCustomerDebt + (args.diffDebt || 0)),
+      overdueDebtAmount: Math.max(0, mainCounter.overdueDebtAmount + (args.diffOverdue || 0)),
+      overdueAccounts: Math.max(0, mainCounter.overdueAccounts + (args.diffOverdueAccounts || 0)),
+    });
+  } else {
+    await ctx.db.insert("financialCounters", {
+      id: "main",
+      totalCustomerCredit: Math.max(0, args.diffCredit || 0),
+      totalCustomerDebt: Math.max(0, args.diffDebt || 0),
+      overdueDebtAmount: Math.max(0, args.diffOverdue || 0),
+      overdueAccounts: Math.max(0, args.diffOverdueAccounts || 0),
+    });
+  }
+
+  if (args.recoveredDebt || args.creditUsed) {
+    const monthCounter = await ctx.db.query("financialCounters").withIndex("by_counter_id", (q: any) => q.eq("id", monthStr)).first();
+    if (monthCounter) {
+      await ctx.db.patch(monthCounter._id, {
+        debtRecoveredThisMonth: (monthCounter.debtRecoveredThisMonth || 0) + (args.recoveredDebt || 0),
+        creditUsedThisMonth: (monthCounter.creditUsedThisMonth || 0) + (args.creditUsed || 0),
+      });
+    } else {
+      await ctx.db.insert("financialCounters", {
+        id: monthStr,
+        totalCustomerCredit: 0,
+        totalCustomerDebt: 0,
+        overdueDebtAmount: 0,
+        overdueAccounts: 0,
+        debtRecoveredThisMonth: args.recoveredDebt || 0,
+        creditUsedThisMonth: args.creditUsed || 0,
+      });
+    }
+  }
+}
+
 
 export const list = query({
   handler: async (ctx) => {
@@ -133,6 +178,13 @@ export const create = mutation({
     let newDebitBalance = 0;
     let customerName = "Walk-in";
     let customerTier = "Regular";
+    
+    let isNewCustomer = 0;
+    let isReturningCustomer = 0;
+    let creditIssuedToday = 0;
+    let creditRedeemedToday = 0;
+    let debtCreatedToday = 0;
+    let debtRecoveredToday = 0;
 
     if (args.customerId) {
       customer = await ctx.db.get(args.customerId);
@@ -168,6 +220,34 @@ export const create = mutation({
       await ctx.db.patch(args.customerId, {
         creditBalance: newCreditBalance,
         debitBalance: newDebitBalance,
+      });
+
+      const oldCredit = customer.creditBalance || 0;
+      const oldDebt = customer.debitBalance || 0;
+      const diffCredit = newCreditBalance - oldCredit;
+      const diffDebt = newDebitBalance - oldDebt;
+      const recoveredDebt = oldDebt > newDebitBalance ? oldDebt - newDebitBalance : 0;
+      
+      if ((customer.orderCount || 0) === 0) {
+        isNewCustomer = 1;
+      } else {
+        isReturningCustomer = 1;
+      }
+
+      creditRedeemedToday = storeCreditUsed;
+      if (isOverpayment && args.changeHandling === "Store Credit") {
+        creditIssuedToday = change;
+      }
+      if (isUnderpayment) {
+        debtCreatedToday = Math.abs(change);
+      }
+      debtRecoveredToday = recoveredDebt;
+
+      await updateFinancialCountersHelper(ctx, {
+        diffCredit,
+        diffDebt,
+        recoveredDebt,
+        creditUsed: storeCreditUsed,
       });
     }
 
@@ -322,11 +402,16 @@ export const create = mutation({
     }
 
     const salesByCategory: Record<string, number> = {};
+    let inventoryCostSold = 0;
+    let inventoryRetailSold = 0;
+
     for (const item of args.items) {
       const product = await ctx.db.get(item.productId);
       if (product) {
         const cat = product.category || "Unknown";
         salesByCategory[cat] = (salesByCategory[cat] || 0) + item.quantity;
+        inventoryCostSold += (product.costPrice || 0) * item.quantity;
+        inventoryRetailSold += (product.sellingPrice || 0) * item.quantity;
       }
     }
 
@@ -346,6 +431,10 @@ export const create = mutation({
         updatedSalesByCategory[key] = (updatedSalesByCategory[key] || 0) + val;
       }
 
+      const isCompleted = status === "Completed";
+      const isPartiallyPaid = status === "Partially Paid";
+      const cashSales = paymentsByMethod["Cash"] || 0;
+      
       await ctx.db.patch(dailyStat._id, {
         totalRevenue: dailyStat.totalRevenue + args.total,
         totalProfit: dailyStat.totalProfit + args.profit,
@@ -354,8 +443,26 @@ export const create = mutation({
         totalPending: (dailyStat.totalPending || 0) + totalPendingAmount,
         paymentsByMethod: updatedPaymentsByMethod,
         salesByCategory: updatedSalesByCategory,
+        totalOrders: (dailyStat.totalOrders || 0) + 1,
+        completedOrders: (dailyStat.completedOrders || 0) + (isCompleted ? 1 : 0),
+        pendingOrders: (dailyStat.pendingOrders || 0) + (!isCompleted && !isPartiallyPaid ? 1 : 0),
+        newCustomers: (dailyStat.newCustomers || 0) + isNewCustomer,
+        returningCustomers: (dailyStat.returningCustomers || 0) + isReturningCustomer,
+        fullyPaidOrders: (dailyStat.fullyPaidOrders || 0) + (isCompleted ? 1 : 0),
+        partiallyPaidOrders: (dailyStat.partiallyPaidOrders || 0) + (isPartiallyPaid ? 1 : 0),
+        creditIssuedToday: (dailyStat.creditIssuedToday || 0) + creditIssuedToday,
+        creditRedeemedToday: (dailyStat.creditRedeemedToday || 0) + creditRedeemedToday,
+        debtCreatedToday: (dailyStat.debtCreatedToday || 0) + debtCreatedToday,
+        debtRecoveredToday: (dailyStat.debtRecoveredToday || 0) + debtRecoveredToday,
+        cashSales: (dailyStat.cashSales || 0) + cashSales,
+        inventoryCostSold: (dailyStat.inventoryCostSold || 0) + inventoryCostSold,
+        inventoryRetailSold: (dailyStat.inventoryRetailSold || 0) + inventoryRetailSold,
       });
     } else {
+      const isCompleted = status === "Completed";
+      const isPartiallyPaid = status === "Partially Paid";
+      const cashSales = paymentsByMethod["Cash"] || 0;
+
       await ctx.db.insert("dailyStats", {
         date: todayStr,
         totalRevenue: args.total,
@@ -365,6 +472,22 @@ export const create = mutation({
         totalPending: totalPendingAmount,
         paymentsByMethod,
         salesByCategory,
+        totalOrders: 1,
+        completedOrders: isCompleted ? 1 : 0,
+        pendingOrders: !isCompleted && !isPartiallyPaid ? 1 : 0,
+        cancelledOrders: 0,
+        refundedOrders: 0,
+        newCustomers: isNewCustomer,
+        returningCustomers: isReturningCustomer,
+        fullyPaidOrders: isCompleted ? 1 : 0,
+        partiallyPaidOrders: isPartiallyPaid ? 1 : 0,
+        creditIssuedToday,
+        creditRedeemedToday,
+        debtCreatedToday,
+        debtRecoveredToday,
+        cashSales,
+        inventoryCostSold,
+        inventoryRetailSold,
       });
     }
 
@@ -374,19 +497,99 @@ export const create = mutation({
       .first();
 
     if (globalCounter) {
+      const isCompleted = status === "Completed";
+      const isPartiallyPaid = status === "Partially Paid";
       await ctx.db.patch(globalCounter._id, {
         totalRevenue: globalCounter.totalRevenue + args.total,
         totalProfit: globalCounter.totalProfit + args.profit,
         transactionCount: globalCounter.transactionCount + 1,
+        totalOrders: (globalCounter.totalOrders || 0) + 1,
+        completedOrders: (globalCounter.completedOrders || 0) + (isCompleted ? 1 : 0),
+        pendingOrders: (globalCounter.pendingOrders || 0) + (!isCompleted && !isPartiallyPaid ? 1 : 0),
+        totalCreditIssued: (globalCounter.totalCreditIssued || 0) + creditIssuedToday,
+        totalCreditRedeemed: (globalCounter.totalCreditRedeemed || 0) + creditRedeemedToday,
+        totalDebtCreated: (globalCounter.totalDebtCreated || 0) + debtCreatedToday,
+        totalDebtRecovered: (globalCounter.totalDebtRecovered || 0) + debtRecoveredToday,
       });
     } else {
+      const isCompleted = status === "Completed";
+      const isPartiallyPaid = status === "Partially Paid";
       await ctx.db.insert("globalCounters", {
         id: "main",
         totalRevenue: args.total,
         totalProfit: args.profit,
         transactionCount: 1,
         activeClients: 0,
+        totalOrders: 1,
+        completedOrders: isCompleted ? 1 : 0,
+        pendingOrders: !isCompleted && !isPartiallyPaid ? 1 : 0,
+        cancelledOrders: 0,
+        refundedOrders: 0,
+        totalCreditIssued: creditIssuedToday,
+        totalCreditRedeemed: creditRedeemedToday,
+        totalDebtCreated: debtCreatedToday,
+        totalDebtRecovered: debtRecoveredToday,
       });
+    }
+
+    // 9. Update Cashier Counters
+    const cashierCounter = await ctx.db
+      .query("cashierCounters")
+      .withIndex("by_userId", (q) => q.eq("userId", args.cashierName))
+      .first();
+    
+    if (cashierCounter) {
+      const newCount = cashierCounter.salesCount + 1;
+      const newRev = cashierCounter.totalRevenue + args.total;
+      await ctx.db.patch(cashierCounter._id, {
+        salesCount: newCount,
+        totalRevenue: newRev,
+        totalProfit: cashierCounter.totalProfit + args.profit,
+        averageOrderValue: newRev / newCount,
+        lastSaleAt: now,
+      });
+    } else {
+      await ctx.db.insert("cashierCounters", {
+        userId: args.cashierName,
+        salesCount: 1,
+        totalRevenue: args.total,
+        totalProfit: args.profit,
+        averageOrderValue: args.total,
+        refundsProcessed: 0,
+        lastSaleAt: now,
+      });
+    }
+
+    // 10. Update Product Counters
+    for (const item of args.items) {
+      const product = await ctx.db.get(item.productId);
+      if (!product) continue;
+      
+      const itemRev = item.quantity * item.price;
+      const itemProfit = itemRev - (item.quantity * (product.costPrice || 0));
+
+      const pCounter = await ctx.db
+        .query("productCounters")
+        .withIndex("by_productId", (q) => q.eq("productId", item.productId))
+        .first();
+      
+      if (pCounter) {
+        await ctx.db.patch(pCounter._id, {
+          totalSold: pCounter.totalSold + item.quantity,
+          totalRevenue: pCounter.totalRevenue + itemRev,
+          totalProfit: pCounter.totalProfit + itemProfit,
+          lastSoldAt: now,
+        });
+      } else {
+        await ctx.db.insert("productCounters", {
+          productId: item.productId,
+          productName: product.name,
+          totalSold: item.quantity,
+          totalRevenue: itemRev,
+          totalProfit: itemProfit,
+          lastSoldAt: now,
+        });
+      }
     }
 
     return transactionId;
@@ -430,6 +633,8 @@ export const remove = mutation({
           reason: `Transaction ${transaction.receiptNumber} Deleted`,
           createdAt: Date.now(),
         });
+        
+        await updateDailyMovementStats(ctx, "Return", item.quantity);
       }
     }
 
@@ -559,6 +764,19 @@ export const remove = mutation({
         updatedSalesByCategory[key] = Math.max(0, (updatedSalesByCategory[key] || 0) - val);
       }
 
+      const isCompleted = transaction.status === "Completed";
+      const isPartiallyPaid = transaction.status === "Partially Paid";
+      const cashSales = paymentsByMethod["Cash"] || 0;
+      let inventoryCostSold = 0;
+      let inventoryRetailSold = 0;
+      for (const item of transaction.items) {
+        const product = await ctx.db.get(item.productId);
+        if (product) {
+          inventoryCostSold += (product.costPrice || 0) * item.quantity;
+          inventoryRetailSold += (product.sellingPrice || 0) * item.quantity;
+        }
+      }
+
       await ctx.db.patch(dailyStat._id, {
         totalRevenue: Math.max(0, dailyStat.totalRevenue - transaction.total),
         totalProfit: Math.max(0, dailyStat.totalProfit - transaction.profit),
@@ -567,6 +785,15 @@ export const remove = mutation({
         totalPending: Math.max(0, (dailyStat.totalPending || 0) - totalPendingAmount),
         paymentsByMethod: updatedPaymentsByMethod,
         salesByCategory: updatedSalesByCategory,
+        totalOrders: Math.max(0, (dailyStat.totalOrders || 0) - 1),
+        completedOrders: Math.max(0, (dailyStat.completedOrders || 0) - (isCompleted ? 1 : 0)),
+        pendingOrders: Math.max(0, (dailyStat.pendingOrders || 0) - (!isCompleted && !isPartiallyPaid ? 1 : 0)),
+        fullyPaidOrders: Math.max(0, (dailyStat.fullyPaidOrders || 0) - (isCompleted ? 1 : 0)),
+        partiallyPaidOrders: Math.max(0, (dailyStat.partiallyPaidOrders || 0) - (isPartiallyPaid ? 1 : 0)),
+        refundAmount: (dailyStat.refundAmount || 0) + transaction.total,
+        cashSales: Math.max(0, (dailyStat.cashSales || 0) - cashSales),
+        inventoryCostSold: Math.max(0, (dailyStat.inventoryCostSold || 0) - inventoryCostSold),
+        inventoryRetailSold: Math.max(0, (dailyStat.inventoryRetailSold || 0) - inventoryRetailSold),
       });
     }
 
@@ -576,11 +803,54 @@ export const remove = mutation({
       .first();
 
     if (globalCounter) {
+      const isCompleted = transaction.status === "Completed";
+      const isPartiallyPaid = transaction.status === "Partially Paid";
       await ctx.db.patch(globalCounter._id, {
         totalRevenue: Math.max(0, globalCounter.totalRevenue - transaction.total),
         totalProfit: Math.max(0, globalCounter.totalProfit - transaction.profit),
         transactionCount: Math.max(0, globalCounter.transactionCount - 1),
+        totalOrders: Math.max(0, (globalCounter.totalOrders || 0) - 1),
+        completedOrders: Math.max(0, (globalCounter.completedOrders || 0) - (isCompleted ? 1 : 0)),
+        pendingOrders: Math.max(0, (globalCounter.pendingOrders || 0) - (!isCompleted && !isPartiallyPaid ? 1 : 0)),
+        totalRefundAmount: (globalCounter.totalRefundAmount || 0) + transaction.total,
       });
+    }
+
+    // Revert Cashier Counters
+    const cashierCounter = await ctx.db
+      .query("cashierCounters")
+      .withIndex("by_userId", (q) => q.eq("userId", transaction.cashierName))
+      .first();
+    
+    if (cashierCounter) {
+      const newCount = Math.max(0, cashierCounter.salesCount - 1);
+      const newRev = Math.max(0, cashierCounter.totalRevenue - transaction.total);
+      await ctx.db.patch(cashierCounter._id, {
+        salesCount: newCount,
+        totalRevenue: newRev,
+        totalProfit: Math.max(0, cashierCounter.totalProfit - transaction.profit),
+        averageOrderValue: newCount > 0 ? newRev / newCount : 0,
+      });
+    }
+
+    // Revert Product Counters
+    for (const item of transaction.items) {
+      const pCounter = await ctx.db
+        .query("productCounters")
+        .withIndex("by_productId", (q) => q.eq("productId", item.productId))
+        .first();
+      
+      if (pCounter) {
+        const itemRev = item.quantity * item.price;
+        const product = await ctx.db.get(item.productId);
+        const itemProfit = itemRev - (item.quantity * (product?.costPrice || 0));
+        
+        await ctx.db.patch(pCounter._id, {
+          totalSold: Math.max(0, pCounter.totalSold - item.quantity),
+          totalRevenue: Math.max(0, pCounter.totalRevenue - itemRev),
+          totalProfit: Math.max(0, pCounter.totalProfit - itemProfit),
+        });
+      }
     }
   },
 });

@@ -59,6 +59,8 @@
   --font-display: var(--font-playfair-display);
   --font-body: var(--font-manrope);
 
+  --font-rc: var(--font-rc);
+
   /* Rounded */
   --radius-sm: 0.25rem;
   --radius: 0.5rem;

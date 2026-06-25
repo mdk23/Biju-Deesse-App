@@ -3,6 +3,59 @@ import { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { mutation, internalMutation } from "./_generated/server";
 
+async function updateCustomerCountersHelper(db: DatabaseWriter, oldC: any, newC: any) {
+  const counter = await db.query("customerCounters").withIndex("by_counter_id", (q) => q.eq("id", "main")).first();
+  let diffs: any = {};
+  
+  if (oldC.financialTier !== newC.financialTier) {
+    if (oldC.financialTier) diffs[`${oldC.financialTier.toLowerCase()}Customers`] = -1;
+    if (newC.financialTier) diffs[`${newC.financialTier.toLowerCase()}Customers`] = 1;
+  }
+  
+  if (oldC.loyaltyLevel !== newC.loyaltyLevel) {
+    if (oldC.loyaltyLevel) diffs[`${oldC.loyaltyLevel.toLowerCase()}Customers`] = -1;
+    if (newC.loyaltyLevel) diffs[`${newC.loyaltyLevel.toLowerCase()}Customers`] = 1;
+  }
+  
+  if (oldC.creditStatus !== newC.creditStatus) {
+    if (oldC.creditStatus === "Overdue") diffs.overdueCustomers = -1;
+    if (newC.creditStatus === "Overdue") diffs.overdueCustomers = 1;
+  }
+
+  if (counter) {
+    const patch: any = {};
+    for (const [key, val] of Object.entries(diffs)) {
+      patch[key] = Math.max(0, (counter as any)[key] + (val as number));
+    }
+    if (Object.keys(patch).length > 0) {
+      await db.patch(counter._id, patch);
+    }
+  } else {
+    const initial: any = {
+      id: "main",
+      totalCustomers: 1,
+      activeCustomers: 1,
+      inactiveCustomers: 0,
+      regularCustomers: 0,
+      premiumCustomers: 0,
+      vipCustomers: 0,
+      platinumCustomers: 0,
+      bronzeCustomers: 0,
+      silverCustomers: 0,
+      goldCustomers: 0,
+      diamondCustomers: 0,
+      customersWithCredit: 0,
+      customersWithDebt: 0,
+      overdueCustomers: 0,
+    };
+    for (const [key, val] of Object.entries(diffs)) {
+      initial[key] = Math.max(0, initial[key] + (val as number));
+    }
+    await db.insert("customerCounters", initial);
+  }
+}
+
+
 export async function recomputeCustomerIntelligence(db: DatabaseWriter | DatabaseReader, customerId: Id<"customers">) {
   const customer = await db.get(customerId);
   if (!customer) return null;
@@ -160,6 +213,12 @@ export async function recomputeCustomerIntelligence(db: DatabaseWriter | Databas
       customerScore,
       customerHealth,
       customerType: "Registered"
+    });
+
+    await updateCustomerCountersHelper(db as DatabaseWriter, customer, {
+      financialTier,
+      loyaltyLevel,
+      creditStatus,
     });
   }
 

@@ -10,15 +10,19 @@
 
 import type * as analytics from "../analytics.js";
 import type * as caixa from "../caixa.js";
+import type * as caixaHelpers from "../caixaHelpers.js";
 import type * as cleanup from "../cleanup.js";
 import type * as crons from "../crons.js";
 import type * as customers from "../customers.js";
 import type * as intelligence from "../intelligence.js";
+import type * as ledgerHelpers from "../ledgerHelpers.js";
 import type * as movements from "../movements.js";
 import type * as payments from "../payments.js";
 import type * as products from "../products.js";
 import type * as seed from "../seed.js";
 import type * as transactions from "../transactions.js";
+import type * as users from "../users.js";
+import type * as utils from "../utils.js";
 
 import type {
   ApiFromModules,
@@ -29,15 +33,19 @@ import type {
 declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   caixa: typeof caixa;
+  caixaHelpers: typeof caixaHelpers;
   cleanup: typeof cleanup;
   crons: typeof crons;
   customers: typeof customers;
   intelligence: typeof intelligence;
+  ledgerHelpers: typeof ledgerHelpers;
   movements: typeof movements;
   payments: typeof payments;
   products: typeof products;
   seed: typeof seed;
   transactions: typeof transactions;
+  users: typeof users;
+  utils: typeof utils;
 }>;
 
 /**

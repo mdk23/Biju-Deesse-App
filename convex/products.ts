@@ -1,5 +1,36 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { updateDailyMovementStats } from "./utils";
+
+async function updateInventoryCountersHelper(ctx: any, args: {
+  diffProducts?: number,
+  diffUnits?: number,
+  diffValue?: number,
+  diffLowStock?: number,
+  diffOutOfStock?: number,
+}) {
+  const counter = await ctx.db.query("inventoryCounters").withIndex("by_counter_id", (q: any) => q.eq("id", "main")).first();
+  if (counter) {
+    await ctx.db.patch(counter._id, {
+      totalProducts: Math.max(0, counter.totalProducts + (args.diffProducts || 0)),
+      totalUnitsInStock: Math.max(0, counter.totalUnitsInStock + (args.diffUnits || 0)),
+      inventoryValue: Math.max(0, counter.inventoryValue + (args.diffValue || 0)),
+      lowStockItems: Math.max(0, counter.lowStockItems + (args.diffLowStock || 0)),
+      outOfStockItems: Math.max(0, counter.outOfStockItems + (args.diffOutOfStock || 0)),
+    });
+  } else {
+    await ctx.db.insert("inventoryCounters", {
+      id: "main",
+      totalProducts: Math.max(0, args.diffProducts || 0),
+      totalUnitsInStock: Math.max(0, args.diffUnits || 0),
+      inventoryValue: Math.max(0, args.diffValue || 0),
+      lowStockItems: Math.max(0, args.diffLowStock || 0),
+      outOfStockItems: Math.max(0, args.diffOutOfStock || 0),
+      deadStockItems: 0,
+      reservedStock: 0,
+    });
+  }
+}
 
 // Get all products (live subscription ready)
 export const list = query({
@@ -41,14 +72,34 @@ export const upsert = mutation({
     let valueDiff = 0;
     let idToReturn = id;
 
+    let diffProducts = 0;
+    let diffUnits = 0;
+    let diffLowStock = 0;
+    let diffOutOfStock = 0;
+
     if (id) {
       const existing = await ctx.db.get(id);
       if (existing) {
         valueDiff = (data.costPrice * data.stock) - (existing.costPrice * existing.stock);
+        diffUnits = data.stock - existing.stock;
+        
+        const wasLow = existing.stock <= existing.reorderLevel && existing.stock > 0;
+        const isLow = data.stock <= data.reorderLevel && data.stock > 0;
+        if (!wasLow && isLow) diffLowStock = 1;
+        if (wasLow && !isLow) diffLowStock = -1;
+
+        const wasOut = existing.stock <= 0;
+        const isOut = data.stock <= 0;
+        if (!wasOut && isOut) diffOutOfStock = 1;
+        if (wasOut && !isOut) diffOutOfStock = -1;
       }
       await ctx.db.patch(id, data);
     } else {
       valueDiff = data.costPrice * data.stock;
+      diffProducts = 1;
+      diffUnits = data.stock;
+      if (data.stock <= data.reorderLevel && data.stock > 0) diffLowStock = 1;
+      if (data.stock <= 0) diffOutOfStock = 1;
       idToReturn = await ctx.db.insert("products", data);
     }
 
@@ -63,6 +114,14 @@ export const upsert = mutation({
         });
       }
     }
+
+    await updateInventoryCountersHelper(ctx, {
+      diffProducts,
+      diffUnits,
+      diffValue: valueDiff,
+      diffLowStock,
+      diffOutOfStock,
+    });
 
     return idToReturn;
   },
@@ -84,6 +143,14 @@ export const remove = mutation({
           inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
         });
       }
+
+      await updateInventoryCountersHelper(ctx, {
+        diffProducts: -1,
+        diffUnits: -product.stock,
+        diffValue: valueDiff,
+        diffLowStock: (product.stock <= product.reorderLevel && product.stock > 0) ? -1 : 0,
+        diffOutOfStock: product.stock <= 0 ? -1 : 0,
+      });
     }
     await ctx.db.delete(args.id);
   },
@@ -130,6 +197,28 @@ export const adjustStock = mutation({
         });
       }
     }
+
+    let diffLowStock = 0;
+    let diffOutOfStock = 0;
+
+    const wasLow = previousStock <= product.reorderLevel && previousStock > 0;
+    const isLow = newStock <= product.reorderLevel && newStock > 0;
+    if (!wasLow && isLow) diffLowStock = 1;
+    if (wasLow && !isLow) diffLowStock = -1;
+
+    const wasOut = previousStock <= 0;
+    const isOut = newStock <= 0;
+    if (!wasOut && isOut) diffOutOfStock = 1;
+    if (wasOut && !isOut) diffOutOfStock = -1;
+
+    await updateInventoryCountersHelper(ctx, {
+      diffUnits: args.quantity,
+      diffValue: valueDiff,
+      diffLowStock,
+      diffOutOfStock,
+    });
+
+    await updateDailyMovementStats(ctx, args.type, args.quantity);
 
     return newStock;
   },

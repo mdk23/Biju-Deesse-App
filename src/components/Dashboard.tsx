@@ -320,7 +320,7 @@ export default function Dashboard() {
             </div>
             <div className="space-y-4">
               {(lowStock || []).length > 0 ? (
-                lowStock!.slice(0, 3).map((item) => (
+                lowStock!.slice(0, 5).map((item) => (
                   <div key={item._id} className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
                     <Package className="text-error mt-1" size={18} />
                     <div>
@@ -339,19 +339,8 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <div className="p-4 bg-white/60 rounded-2xl border border-white shadow-sm flex items-start gap-4">
-                <ShieldCheck className="text-secondary mt-1" size={18} />
-                <div>
-                  <p className="font-label-caps text-[10px] text-on-surface font-bold">INSURANCE RENEWAL</p>
-                  <p className="font-body-md text-xs text-on-surface-variant">Vault insurance expires in 12 days.</p>
-                </div>
-              </div>
             </div>
-            <button className="w-full mt-6 py-4 bg-white border border-error/20 text-error rounded-2xl font-label-caps text-[10px] hover:bg-error/5 transition-all">
-              VIEW INVENTORY CONTROL
-            </button>
           </div>
-
 
         </div>
       </div>
