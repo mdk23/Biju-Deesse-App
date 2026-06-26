@@ -1,3 +1,4 @@
+import {ClerkProvider} from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Playfair_Display, Manrope } from "next/font/google";
 import "./globals.css";
@@ -45,6 +46,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  console.log("Next.js Publishable Key:", process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
   return (
     <html
       lang="en"
@@ -57,12 +59,17 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <ConvexClientProvider>
+        <ClerkProvider 
+          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+          appearance={{ elements: { footer: 'hidden' } }}
+        >
+          <ConvexClientProvider>
           <AuthProvider>
-            {children}
+          {children}
           </AuthProvider>
           <Toaster position="top-center" richColors />
-        </ConvexClientProvider>
+          </ConvexClientProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

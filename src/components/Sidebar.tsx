@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from './AuthProvider';
 
 type SidebarProps = {
   collapsed: boolean;
@@ -22,6 +23,14 @@ const navItems = [
 
 export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname() || '/';
+  const { logout, user } = useAuth();
+
+  const filteredNavItems = navItems.filter((item) => {
+    if (user?.role === "POS") {
+      return item.href === '/' || item.href === '/pos' || item.href === '/caixa';
+    }
+    return true;
+  });
 
   return (
     <aside
@@ -35,7 +44,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
       </div>
 
       <nav className="flex-1 space-y-1">
-        {navItems.map((item) => {
+        {filteredNavItems.map((item) => {
           const active = pathname === item.href;
           return (
             <Link
@@ -54,6 +63,16 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
         })}
       </nav>
 
+
+      <div className="mt-auto px-6 py-4 border-t border-white/20">
+        <button
+          onClick={logout}
+          className={`flex items-center gap-3 text-error hover:bg-error/10 px-3 py-2 rounded-lg w-full transition-colors ${collapsed ? 'justify-center' : ''}`}
+        >
+          <span className="material-symbols-outlined">logout</span>
+          {!collapsed && <span className="font-label-caps text-label-caps">Log Out</span>}
+        </button>
+      </div>
 
       <button
         onClick={onToggleCollapse}

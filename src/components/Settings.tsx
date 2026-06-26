@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { createClerkUserAction, deleteClerkUserAction, updateClerkPasswordAction } from "../app/actions/clerkActions";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
@@ -94,13 +95,19 @@ function ProfileSection() {
 
     setIsSubmitting(true);
     try {
-      // @ts-ignore
-      await resetPassword({ userId: user!._id, newPassword });
+      if (user?.clerkId) {
+        const clerkRes = await updateClerkPasswordAction(user.clerkId, newPassword);
+        if (!clerkRes.success) {
+          throw new Error(clerkRes.message || "Failed to update password in Clerk");
+        }
+      }
+
+      await resetPassword({ userId: user!._id as Id<"users">, newPassword });
       toast.success("Password updated successfully");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (error) {
-      toast.error("Failed to update password");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update password");
       console.error(error);
     } finally {
       setIsSubmitting(false);
@@ -162,23 +169,79 @@ function ProfileSection() {
 function UserManagementSection() {
   const { user } = useAuth();
   const users = useQuery(api.users.listUsers);
-  const createUser = useMutation(api.users.createUser);
+  const storeClerkUser = useMutation(api.users.storeClerkUser);
+  const deleteUser = useMutation(api.users.deleteUser);
+  const toggleBlockUser = useMutation(api.users.toggleBlockUser);
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"manager" | "POS">("POS");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const handleToggleBlock = async (targetUser: any) => {
+    if (!user) return;
+    const isBlocking = !targetUser.blocked;
+    try {
+      await toggleBlockUser({ 
+        userId: targetUser._id, 
+        blocked: isBlocking,
+        performedById: user._id as Id<"users">
+      });
+      toast.success(`User ${targetUser.username} has been ${isBlocking ? "blocked" : "unblocked"}!`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update user status");
+      console.error(error);
+    }
+  };
+
+  const handleDeleteUser = async (targetUser: any) => {
+    if (!user) return;
+    if (!confirm(`Are you sure you want to delete user ${targetUser.username}?`)) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      // 1. Delete from Clerk if they have a clerkId
+      if (targetUser.clerkId) {
+        const clerkRes = await deleteClerkUserAction(targetUser.clerkId);
+        if (!clerkRes.success) {
+          throw new Error(clerkRes.message || "Failed to delete user from Clerk");
+        }
+      }
+
+      // 2. Delete from Convex
+      await deleteUser({ 
+        userId: targetUser._id,
+        performedById: user._id as Id<"users">
+      });
+      toast.success(`User ${targetUser.username} deleted successfully!`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete user");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await createUser({
+      // Create user in Clerk Backend first
+      const clerkRes = await createClerkUserAction(username, password);
+      
+      if (!clerkRes.success || !clerkRes.clerkId) {
+        throw new Error(clerkRes.message || "Failed to create user in Clerk");
+      }
+
+      // Sync the user to Convex database with their newly generated Clerk ID
+      await storeClerkUser({
         creatorId: user!._id as Id<"users">,
-        newUsername: username,
-        newPassword: password,
-        newRole: role,
-        newName: "",
+        clerkId: clerkRes.clerkId,
+        username: username,
+        role: role,
+        name: "",
       });
       toast.success(`User ${username} created!`);
       setUsername("");
@@ -283,19 +346,63 @@ function UserManagementSection() {
               <tr className="border-b border-white/50 bg-white/20">
                 <th className="py-3 px-4 font-label-caps text-[10px] text-outline tracking-wider">USERNAME</th>
                 <th className="py-3 px-4 font-label-caps text-[10px] text-outline tracking-wider">ROLE</th>
+                <th className="py-3 px-4 font-label-caps text-[10px] text-outline tracking-wider">STATUS</th>
+                <th className="py-3 px-4 font-label-caps text-[10px] text-outline tracking-wider text-right">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u._id} className="border-b border-white/20 last:border-0 hover:bg-white/30 transition-colors">
-                  <td className="py-3 px-4 text-sm font-medium">{u.username}</td>
-                  <td className="py-3 px-4">
-                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-label-caps bg-primary/10 text-primary">
-                      {u.role}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const isSelf = u.clerkId === user?.clerkId;
+                const performerRole = user?.role;
+                const canManageTarget =
+                  (performerRole === "admin" && !isSelf) ||
+                  (performerRole === "manager" && u.role === "POS");
+                return (
+                  <tr key={u._id} className="border-b border-white/20 last:border-0 hover:bg-white/30 transition-colors">
+                    <td className="py-3 px-4 text-sm font-medium">{u.username}</td>
+                    <td className="py-3 px-4">
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-label-caps bg-primary/10 text-primary">
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      {u.blocked ? (
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-label-caps bg-error/10 text-error">
+                          Blocked
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-label-caps bg-success/15 text-success">
+                          Active
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      {canManageTarget && (
+                        <>
+                          <button
+                            onClick={() => handleToggleBlock(u)}
+                            className={`px-3 py-1 rounded text-xs font-label-caps transition-colors ${
+                              u.blocked 
+                                ? "bg-success/10 text-success hover:bg-success/20" 
+                                : "bg-warning/10 text-warning hover:bg-warning/20"
+                            }`}
+                            disabled={isSubmitting}
+                          >
+                            {u.blocked ? "Unblock" : "Block"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u)}
+                            className="px-3 py-1 rounded text-xs font-label-caps bg-error/10 text-error hover:bg-error/20 transition-colors"
+                            disabled={isSubmitting}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

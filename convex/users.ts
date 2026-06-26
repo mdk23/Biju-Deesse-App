@@ -12,7 +12,6 @@ export const seed = mutation({
     if (!existing) {
       await ctx.db.insert("users", {
         username: "mdk",
-        passwordHash: "123", // Using plaintext for MVP per plan
         role: "admin",
         name: "MDK Admin",
       });
@@ -22,44 +21,55 @@ export const seed = mutation({
   },
 });
 
-export const login = mutation({
-  args: {
-    username: v.string(),
-    password: v.string(),
+export const getUserByClerkId = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) return null;
+
+    return {
+      _id: user._id,
+      username: user.username,
+      role: user.role,
+      name: user.name,
+      clerkId: user.clerkId,
+      blocked: user.blocked,
+    };
   },
+});
+
+export const getUserByUsername = query({
+  args: { username: v.string() },
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query("users")
       .withIndex("by_username", (q) => q.eq("username", args.username))
       .first();
-
-    if (!user) {
-      return { success: false, message: "Invalid username or password" };
-    }
-
-    if (user.passwordHash !== args.password) {
-      return { success: false, message: "Invalid username or password" };
-    }
-
-    return {
-      success: true,
-      user: {
-        _id: user._id,
-        username: user.username,
-        role: user.role,
-        name: user.name,
-      },
-    };
+    return user;
   },
 });
 
-export const createUser = mutation({
+export const updateClerkId = mutation({
+  args: {
+    userId: v.id("users"),
+    clerkId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, { clerkId: args.clerkId });
+  },
+});
+
+export const storeClerkUser = mutation({
   args: {
     creatorId: v.id("users"),
-    newUsername: v.string(),
-    newPassword: v.string(),
-    newRole: v.string(),
-    newName: v.optional(v.string()),
+    clerkId: v.string(),
+    username: v.string(),
+    role: v.string(),
+    name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const creator = await ctx.db.get(args.creatorId);
@@ -69,44 +79,27 @@ export const createUser = mutation({
       throw new Error("POS users cannot create new accounts");
     }
 
-    if (creator.role === "manager" && args.newRole !== "POS") {
+    if (creator.role === "manager" && args.role !== "POS") {
       throw new Error("Managers can only create POS accounts");
     }
 
     const existing = await ctx.db
       .query("users")
-      .withIndex("by_username", (q) => q.eq("username", args.newUsername))
+      .withIndex("by_username", (q) => q.eq("username", args.username))
       .first();
 
     if (existing) {
-      throw new Error("Username already exists");
+      throw new Error("Username already exists in Convex");
     }
 
     const newUserId = await ctx.db.insert("users", {
-      username: args.newUsername,
-      passwordHash: args.newPassword,
-      role: args.newRole,
-      name: args.newName,
+      clerkId: args.clerkId,
+      username: args.username,
+      role: args.role,
+      name: args.name,
     });
 
     return newUserId;
-  },
-});
-
-export const resetPassword = mutation({
-  args: {
-    userId: v.id("users"),
-    newPassword: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error("User not found");
-
-    await ctx.db.patch(args.userId, {
-      passwordHash: args.newPassword,
-    });
-
-    return { success: true };
   },
 });
 
@@ -119,6 +112,61 @@ export const listUsers = query({
       username: user.username,
       role: user.role,
       name: user.name,
+      clerkId: user.clerkId,
+      blocked: user.blocked,
     }));
+  },
+});
+
+export const deleteUser = mutation({
+  args: { userId: v.id("users"), performedById: v.id("users") },
+  handler: async (ctx, args) => {
+    const performer = await ctx.db.get(args.performedById);
+    if (!performer) throw new Error("Performer not found");
+
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("Target user not found");
+
+    if (performer.role === "manager" && target.role !== "POS") {
+      throw new Error("Managers can only delete POS users");
+    }
+    if (performer.role !== "admin" && performer.role !== "manager") {
+      throw new Error("Unauthorized to delete users");
+    }
+    if (target.role === "admin") {
+      throw new Error("Admins cannot be deleted");
+    }
+
+    await ctx.db.delete(args.userId);
+  },
+});
+
+export const toggleBlockUser = mutation({
+  args: { userId: v.id("users"), blocked: v.boolean(), performedById: v.id("users") },
+  handler: async (ctx, args) => {
+    const performer = await ctx.db.get(args.performedById);
+    if (!performer) throw new Error("Performer not found");
+
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("Target user not found");
+
+    if (performer.role === "manager" && target.role !== "POS") {
+      throw new Error("Managers can only block/unblock POS users");
+    }
+    if (performer.role !== "admin" && performer.role !== "manager") {
+      throw new Error("Unauthorized to block users");
+    }
+    if (target.role === "admin") {
+      throw new Error("Admins cannot be blocked");
+    }
+
+    await ctx.db.patch(args.userId, { blocked: args.blocked });
+  },
+});
+
+export const resetPassword = mutation({
+  args: { userId: v.id("users"), newPassword: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, { passwordHash: args.newPassword });
   },
 });

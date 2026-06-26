@@ -1,40 +1,135 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSignIn, useClerk, useUser } from "@clerk/nextjs";
+import { useConvex } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
-import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
+import LuxuryLoader from "../../components/LuxuryLoader";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  const loginMutation = useMutation(api.users.login);
-  const { login } = useAuth();
+  const { signIn } = useSignIn();
+  const { signOut } = useClerk();
+  const { isSignedIn, isLoaded: isUserLoaded } = useUser();
+  const router = useRouter();
+  const convex = useConvex();
+
+  useEffect(() => {
+    if (isUserLoaded && isSignedIn && !isSubmitting && !isRedirecting) {
+      console.log("User is already signed in on login page, redirecting to home...");
+      window.location.href = "/";
+    }
+  }, [isUserLoaded, isSignedIn, isSubmitting, isRedirecting]);
+
+  if (isRedirecting || (isUserLoaded && isSignedIn && !isSubmitting)) {
+    return <LuxuryLoader text="Entering secure portal..." />;
+  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
+    if (!signIn) return;
+
     setIsSubmitting(true);
 
     try {
-      const result = await loginMutation({ username, password });
+      const result = await signIn.password({
+        identifier: `usr_${username}`,
+        password,
+      });
 
-      if (result.success && result.user) {
-        toast.success(`Welcome back, ${result.user.name || result.user.username}!`);
-        login(result.user);
-        // The AuthProvider will handle the redirect to "/"
-      } else {
-        toast.error(result.message || "Invalid credentials");
+      if (result.error) {
+        toast.error(result.error.message || "Invalid credentials");
+        console.error(result.error);
+        return;
       }
-    } catch (error) {
-      toast.error("An error occurred during login");
-      console.error(error);
+
+      if (signIn.status === "complete") {
+        // Query Convex to check if this user is blocked
+        const dbUser = await convex.query(api.users.getUserByUsername, { username });
+        if (dbUser && dbUser.blocked) {
+          toast.error("User is blocked, contact admin");
+          await signOut();
+          setIsSubmitting(false);
+          return;
+        }
+
+        toast.success(`Welcome back!`);
+        setIsRedirecting(true);
+        setTimeout(async () => {
+          await signIn.finalize({
+            navigate: ({ decorateUrl }) => {
+              const url = decorateUrl("/");
+              if (url.startsWith("http")) {
+                window.location.href = url;
+              } else {
+                router.push(url);
+              }
+            },
+          });
+        }, 1800);
+      } else {
+        console.log(signIn);
+        toast.error("Further action required to sign in.");
+      }
+    } catch (err: any) {
+      const errMsg = err.message || "";
+      if (errMsg.includes("already signed in")) {
+        toast.info("Clearing active session... Logging you in...");
+        try {
+          await signOut();
+          const retryResult = await signIn.password({
+            identifier: `usr_${username}`,
+            password,
+          });
+
+          if (retryResult.error) {
+            toast.error(retryResult.error.message || "Invalid credentials");
+            return;
+          }
+
+          if (signIn.status === "complete") {
+            // Query Convex to check if this user is blocked
+            const dbUser = await convex.query(api.users.getUserByUsername, { username });
+            if (dbUser && dbUser.blocked) {
+              toast.error("User is blocked, contact admin");
+              await signOut();
+              setIsSubmitting(false);
+              return;
+            }
+
+            toast.success(`Welcome back!`);
+            setIsRedirecting(true);
+            setTimeout(async () => {
+              await signIn.finalize({
+                navigate: ({ decorateUrl }) => {
+                  const url = decorateUrl("/");
+                  if (url.startsWith("http")) {
+                    window.location.href = url;
+                  } else {
+                    router.push(url);
+                  }
+                },
+              });
+            }, 1800);
+          }
+        } catch (retryErr: any) {
+          toast.error(retryErr.message || "Invalid credentials");
+          console.error(retryErr);
+        }
+      } else {
+        toast.error(errMsg || "Invalid credentials");
+      }
+      console.error(err);
     } finally {
       setIsSubmitting(false);
     }
@@ -84,7 +179,7 @@ export default function LoginPage() {
                   className="w-full bg-transparent border-0 border-b border-outline-variant py-3 px-0 font-body-md text-on-surface focus:ring-0 focus:border-secondary-fixed-dim focus:shadow-[0_1px_0_0_var(--color-secondary-fixed-dim)] transition-all placeholder:text-on-surface-variant/40 outline-none"
                   id="username"
                   name="username"
-                  placeholder="e.g., mdk"
+                  placeholder="User"
                   required
                   type="text"
                   value={username}

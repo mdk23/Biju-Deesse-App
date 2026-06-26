@@ -268,9 +268,12 @@ export default defineSchema({
   }).index("by_userId", ["userId"]),
 
   users: defineTable({
+    clerkId: v.optional(v.string()),
     username: v.string(),
-    passwordHash: v.string(),
+    passwordHash: v.optional(v.string()),
     role: v.string(), // "admin", "manager", "POS"
     name: v.optional(v.string()),
-  }).index("by_username", ["username"]),
+    blocked: v.optional(v.boolean()),
+  }).index("by_username", ["username"])
+    .index("by_clerkId", ["clerkId"]),
 });
