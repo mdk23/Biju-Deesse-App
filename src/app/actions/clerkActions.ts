@@ -40,3 +40,32 @@ export async function updateClerkPasswordAction(clerkId: string, newPassword: st
     return { success: false, message: error.errors?.[0]?.longMessage || error.message || "Failed to update password in Clerk" };
   }
 }
+
+export async function enforceSingleSessionAction(currentSessionId: string) {
+  try {
+    const clerk = await clerkClient();
+    
+    // 1. Retrieve the current session to get the user ID
+    const currentSession = await clerk.sessions.getSession(currentSessionId);
+    const clerkUserId = currentSession.userId;
+    
+    // 2. Get all active sessions for the user
+    const sessions = await clerk.sessions.getSessionList({
+      userId: clerkUserId,
+    });
+
+    // 3. Revoke all other active sessions
+    let revokedCount = 0;
+    for (const session of sessions.data) {
+      if (session.id !== currentSessionId && session.status === "active") {
+        await clerk.sessions.revokeSession(session.id);
+        revokedCount++;
+      }
+    }
+    
+    return { success: true, revokedCount };
+  } catch (error: any) {
+    console.error("Error enforcing single session:", error);
+    return { success: false, message: error.message || "Failed to enforce single session" };
+  }
+}

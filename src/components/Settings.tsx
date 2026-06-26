@@ -185,7 +185,6 @@ function UserManagementSection() {
       await toggleBlockUser({ 
         userId: targetUser._id, 
         blocked: isBlocking,
-        performedById: user._id as Id<"users">
       });
       toast.success(`User ${targetUser.username} has been ${isBlocking ? "blocked" : "unblocked"}!`);
     } catch (error: any) {
@@ -213,7 +212,6 @@ function UserManagementSection() {
       // 2. Delete from Convex
       await deleteUser({ 
         userId: targetUser._id,
-        performedById: user._id as Id<"users">
       });
       toast.success(`User ${targetUser.username} deleted successfully!`);
     } catch (error: any) {
@@ -237,7 +235,6 @@ function UserManagementSection() {
 
       // Sync the user to Convex database with their newly generated Clerk ID
       await storeClerkUser({
-        creatorId: user!._id as Id<"users">,
         clerkId: clerkRes.clerkId,
         username: username,
         role: role,

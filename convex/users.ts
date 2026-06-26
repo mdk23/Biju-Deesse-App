@@ -65,15 +65,23 @@ export const updateClerkId = mutation({
 
 export const storeClerkUser = mutation({
   args: {
-    creatorId: v.id("users"),
     clerkId: v.string(),
     username: v.string(),
     role: v.string(),
     name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const creator = await ctx.db.get(args.creatorId);
-    if (!creator) throw new Error("Creator not found");
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated. Please log in first.");
+    }
+
+    const creator = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!creator) throw new Error("Creator user record not found in database.");
 
     if (creator.role === "POS") {
       throw new Error("POS users cannot create new accounts");
@@ -119,10 +127,19 @@ export const listUsers = query({
 });
 
 export const deleteUser = mutation({
-  args: { userId: v.id("users"), performedById: v.id("users") },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const performer = await ctx.db.get(args.performedById);
-    if (!performer) throw new Error("Performer not found");
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated. Please log in first.");
+    }
+
+    const performer = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!performer) throw new Error("Performer user record not found in database.");
 
     const target = await ctx.db.get(args.userId);
     if (!target) throw new Error("Target user not found");
@@ -142,10 +159,19 @@ export const deleteUser = mutation({
 });
 
 export const toggleBlockUser = mutation({
-  args: { userId: v.id("users"), blocked: v.boolean(), performedById: v.id("users") },
+  args: { userId: v.id("users"), blocked: v.boolean() },
   handler: async (ctx, args) => {
-    const performer = await ctx.db.get(args.performedById);
-    if (!performer) throw new Error("Performer not found");
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated. Please log in first.");
+    }
+
+    const performer = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!performer) throw new Error("Performer user record not found in database.");
 
     const target = await ctx.db.get(args.userId);
     if (!target) throw new Error("Target user not found");

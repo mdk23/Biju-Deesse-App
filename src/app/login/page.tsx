@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSignIn, useClerk, useUser } from "@clerk/nextjs";
 import { useConvex } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { enforceSingleSessionAction } from "../actions/clerkActions";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -63,6 +64,11 @@ export default function LoginPage() {
           return;
         }
 
+        // Enforce single session restriction
+        if (signIn.createdSessionId) {
+          await enforceSingleSessionAction(signIn.createdSessionId);
+        }
+
         toast.success(`Welcome back!`);
         setIsRedirecting(true);
         setTimeout(async () => {
@@ -105,6 +111,11 @@ export default function LoginPage() {
               await signOut();
               setIsSubmitting(false);
               return;
+            }
+
+            // Enforce single session restriction
+            if (signIn.createdSessionId) {
+              await enforceSingleSessionAction(signIn.createdSessionId);
             }
 
             toast.success(`Welcome back!`);
