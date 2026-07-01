@@ -206,8 +206,6 @@ export default function POS() {
     setIsSubmitting(true);
 
     try {
-      const receiptNumber = `INV-${Date.now().toString().slice(-8)}`;
-
       // Determine effective settlement type
       let effectiveSettlement = settlementType;
 
@@ -221,7 +219,7 @@ export default function POS() {
                 amount: parseFloat(e.amount),
               }));
 
-      await createTransaction({
+      const result = await createTransaction({
         customerId: (selectedCustomerId as Id<"customers">) || undefined,
         items: cart.map((item) => ({
           productId: item.id,
@@ -234,7 +232,6 @@ export default function POS() {
         total: saleTotals.total,
         profit: saleTotals.profit,
         cashierName: "Biju Cashier",
-        receiptNumber,
         amountReceived: effectiveSettlement === "Pending" ? 0 : amountReceived,
         changeGiven,
         changeHandling: changeGiven > 0 ? changeHandling : undefined,
@@ -242,7 +239,7 @@ export default function POS() {
         paymentBreakdown,
       });
 
-      toast.success(`Transaction ${receiptNumber} saved!`);
+      toast.success(`Transaction Complete: ${result.receiptNumber}`);
       setCart([]);
       setPaymentEntries([{ id: "1", method: "Cash", amount: "" }]);
       setSelectedCustomerId(null);

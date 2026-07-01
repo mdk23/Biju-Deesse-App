@@ -119,6 +119,10 @@ export default function Inventory() {
   const deleteProduct = useMutation(api.products.remove);
 
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const selectedProductMovements = useQuery(
+    api.movements.getForProduct,
+    selectedProduct ? { productId: selectedProduct._id } : "skip"
+  ) || [];
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -744,23 +748,40 @@ export default function Inventory() {
                   <h4 className="font-label-caps text-[11px] text-outline mb-4 flex items-center gap-2">
                     <History size={14} /> MOVEMENT HISTORY
                   </h4>
-                  <div className="space-y-4">
-                    <div className="flex gap-4 items-start relative pb-6 border-l border-outline-variant/30 ml-2 pl-6">
-                      <div className="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-secondary"></div>
-                      <div>
-                        <p className="font-body-md text-sm font-bold">Stock Out - Sale (#INV-92841)</p>
-                        <p className="font-data-tabular text-[10px] text-outline">12 Oct 2023 • 14:22</p>
-                        <p className="font-body-md text-xs mt-1 text-on-surface-variant">Sold to Eleanor Vance • -1 unit</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 items-start relative pb-2 border-l border-transparent ml-2 pl-6">
-                      <div className="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-outline"></div>
-                      <div>
-                        <p className="font-body-md text-sm font-bold">Stock In - Manual Addition</p>
-                        <p className="font-data-tabular text-[10px] text-outline">15 Jan 2023 • 09:15</p>
-                        <p className="font-body-md text-xs mt-1 text-on-surface-variant">Initial stock entry • +13 units</p>
-                      </div>
-                    </div>
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                    {selectedProductMovements.length > 0 ? (
+                      selectedProductMovements.map((m: any, idx: number) => {
+                        const isStockIn = m.quantity > 0;
+                        const formattedTime = new Date(m.createdAt).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        });
+                        const isLast = idx === selectedProductMovements.length - 1;
+
+                        return (
+                          <div 
+                            key={m._id} 
+                            className={`flex gap-4 items-start relative pl-6 ${!isLast ? 'pb-6 border-l border-outline-variant/30 ml-2' : 'pb-2 border-l border-transparent ml-2'}`}
+                          >
+                            <div className={`absolute top-1 -left-1.5 w-3 h-3 rounded-full ${isStockIn ? 'bg-secondary' : 'bg-primary'}`}></div>
+                            <div>
+                              <p className="font-body-md text-sm font-bold">
+                                {isStockIn ? 'Stock In' : 'Stock Out'} - {m.movementType}
+                              </p>
+                              <p className="font-data-tabular text-[10px] text-outline">{formattedTime}</p>
+                              <p className="font-body-md text-xs mt-1 text-on-surface-variant">
+                                {m.reason?.replace("INV-", "ORD-")} • {isStockIn ? '+' : ''}{m.quantity} unit{Math.abs(m.quantity) !== 1 ? 's' : ''}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-outline italic pl-2">No movement history recorded for this piece.</p>
+                    )}
                   </div>
                 </div>
 

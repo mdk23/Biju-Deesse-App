@@ -3,23 +3,23 @@
 import { useRouter } from 'next/navigation';
 
 import React, { useState, useMemo } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Bell, 
-  Download, 
-  Filter, 
-  MoreVertical, 
-  TrendingUp, 
-  DollarSign, 
-  ShoppingBag, 
-  CreditCard, 
-  Clock, 
-  ChevronRight, 
+import {
+  Plus,
+  Search,
+  Bell,
+  Download,
+  Filter,
+  MoreVertical,
+  TrendingUp,
+  DollarSign,
+  ShoppingBag,
+  CreditCard,
+  Clock,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
-  X, 
-  ArrowUpRight, 
+  X,
+  ArrowUpRight,
   ArrowDownRight,
   PieChart as PieChartIcon,
   BarChart3,
@@ -33,16 +33,16 @@ import {
   FileText,
   Trash2
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  PieChart, 
-  Pie, 
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
   Cell,
   BarChart,
   Bar,
@@ -83,7 +83,7 @@ import { toast } from 'sonner';
 // --- Sub-components ---
 
 const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any) => (
-  <motion.div 
+  <motion.div
     whileHover={{ y: -5 }}
     className="glass-panel p-6 rounded-2xl border border-white/50 relative overflow-hidden group hover:shadow-2xl transition-all"
   >
@@ -98,7 +98,7 @@ const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any
     </div>
     <p className="font-label-caps text-[10px] text-outline mb-1">{title}</p>
     <h3 className="font-headline-md text-2xl text-primary">{value}</h3>
-    
+
     <div className="mt-4 h-12 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={sparklineData}>
@@ -112,9 +112,9 @@ const KPIStats = ({ title, value, trend, icon: Icon, color, sparklineData }: any
 // --- Main Component ---
 
 const COLORS = [
-  '#8a4853', '#735c00', '#6e5371', '#d7c1c3', '#4a3b32', 
-  '#c2a38d', '#d4af37', '#6b4c41', '#9e7b6d', '#8c7b75', 
-  '#43323c', '#5c6b73', '#bda09a', '#d1cdcb', '#a88d75', 
+  '#8a4853', '#735c00', '#6e5371', '#d7c1c3', '#4a3b32',
+  '#c2a38d', '#d4af37', '#6b4c41', '#9e7b6d', '#8c7b75',
+  '#43323c', '#5c6b73', '#bda09a', '#d1cdcb', '#a88d75',
   '#554d48', '#8a9591', '#f3e5d8'
 ];
 
@@ -125,7 +125,7 @@ export default function Sales() {
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
   const customers = useQuery(api.customers.list) || [];
   const products = useQuery(api.products.list, { archived: false }) || [];
-  
+
   const createTransaction = useMutation(api.transactions.create);
   const removeTransaction = useMutation(api.transactions.remove);
 
@@ -179,10 +179,11 @@ export default function Sales() {
     return transactions.filter(s => {
       // 1. Search Query (Invoice / Cashier / Customer Name)
       const customerName = s.customerName || "Walk-in";
-      const matchesSearch = (s.receiptNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           (s.cashierName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           customerName.toLowerCase().includes(searchQuery.toLowerCase());
-      
+      const matchesSearch = (s.receiptNumber || "").toLowerCase().replace("inv-", "ord-").includes(searchQuery.toLowerCase()) ||
+        (s.receiptNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.cashierName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customerName.toLowerCase().includes(searchQuery.toLowerCase());
+
       // 2. Status Filter
       const matchesStatus = statusFilter === 'All Status' || s.status === statusFilter;
 
@@ -191,14 +192,14 @@ export default function Sales() {
       const matchesDate = txTime >= dateRangeLimits.start && txTime <= dateRangeLimits.end;
 
       // 4. Payment Method Filter
-      const matchesPayment = paymentFilter === 'All Methods' || 
-                            s.paymentMethod === paymentFilter || 
-                            s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
+      const matchesPayment = paymentFilter === 'All Methods' ||
+        s.paymentMethod === paymentFilter ||
+        s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
 
       // 5. Customer Tier Filter
       const computedTier = (s.customerTier || '').toLowerCase();
       const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
-      
+
       let matchesTier = true;
       if (tierFilter !== 'All Tiers') {
         if (tierFilter === 'Walk-in') {
@@ -225,7 +226,7 @@ export default function Sales() {
   const dynamicKPIs = useMemo(() => {
     const totalRevenue = filteredSales.reduce((acc, s) => acc + s.total, 0);
     const totalProfit = filteredSales.reduce((acc, s) => acc + s.profit, 0);
-    
+
     const clientIds = new Set();
     let walkInCount = 0;
     filteredSales.forEach(s => {
@@ -237,7 +238,7 @@ export default function Sales() {
     });
     const activeClients = clientIds.size + (walkInCount > 0 ? 1 : 0);
     const avgTransaction = filteredSales.length > 0 ? (totalRevenue / filteredSales.length) : 0;
-    
+
     // Valuation is overall product inventory value
     const estimatedValuation = brief?.estimatedValuation || 0;
     const totalPending = filteredSales.reduce((acc, s) => {
@@ -276,13 +277,13 @@ export default function Sales() {
     const prevSales = transactions.filter(s => {
       const txTime = s._creationTime;
       const matchesDate = txTime >= start && txTime <= end;
-      const matchesPayment = paymentFilter === 'All Methods' || 
-                            s.paymentMethod === paymentFilter || 
-                            s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
-      
+      const matchesPayment = paymentFilter === 'All Methods' ||
+        s.paymentMethod === paymentFilter ||
+        s.paymentBreakdown.some((p: any) => p.method === paymentFilter);
+
       const computedTier = (s.customerTier || '').toLowerCase();
       const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
-      
+
       let matchesTier = true;
       if (tierFilter !== 'All Tiers') {
         if (tierFilter === 'Walk-in') {
@@ -307,7 +308,7 @@ export default function Sales() {
     const prevRevenue = prevSales.reduce((acc, s) => acc + s.total, 0);
     const prevProfit = prevSales.reduce((acc, s) => acc + s.profit, 0);
     const prevAvg = prevSales.length > 0 ? (prevRevenue / prevSales.length) : 0;
-    
+
     const prevClientIds = new Set();
     let prevWalkIn = 0;
     prevSales.forEach(s => {
@@ -344,14 +345,14 @@ export default function Sales() {
     const { start, end } = dateRangeLimits;
     const actualStart = start > 0 ? start : Math.min(...filteredSales.map(s => s._creationTime));
     const actualEnd = end < Infinity ? end : Math.max(...filteredSales.map(s => s._creationTime));
-    
+
     const interval = (actualEnd - actualStart) / 6 || 1;
     const points = Array(6).fill(0).map((_, i) => {
       const intervalStart = actualStart + i * interval;
       const intervalEnd = intervalStart + interval;
 
       const salesInInterval = filteredSales.filter(s => s._creationTime >= intervalStart && s._creationTime <= intervalEnd);
-      
+
       let value = 0;
       if (metric === 'total') {
         value = salesInInterval.reduce((acc, s) => acc + s.total, 0);
@@ -511,7 +512,7 @@ export default function Sales() {
 
   const topSellingItems = useMemo(() => {
     const itemCounts: Record<string, { name: string, count: number }> = {};
-    
+
     filteredSales.forEach(s => {
       s.items.forEach((item: any) => {
         if (!itemCounts[item.productId]) {
@@ -527,15 +528,13 @@ export default function Sales() {
       .slice(0, 5);
   }, [filteredSales, products]);
 
-  const formatCurrency = (val: number) => 
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
       .format(val)
       .replace('MZN', 'Mt');
 
   const handleRegisterSale = async () => {
     try {
-      const receiptNumber = `INV-${Math.floor(10000 + Math.random() * 90000)}`;
-      
       // Calculate profit (needs product cost prices)
       let totalProfit = 0;
       const itemsForMutation = saleForm.items.map(item => {
@@ -552,7 +551,7 @@ export default function Sales() {
       // 2. Derive Settlement Type & Validate
       const totalPaid = saleForm.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
       const remainingBalance = saleTotals.total - totalPaid;
-      
+
       let settlementType: 'Completed' | 'Partially Paid' | 'Pending' = 'Pending';
       if (totalPaid >= saleTotals.total) settlementType = 'Completed';
       else if (totalPaid > 0) settlementType = 'Partially Paid';
@@ -568,7 +567,7 @@ export default function Sales() {
         return;
       }
 
-      await createTransaction({
+      const result = await createTransaction({
         customerId: (saleForm.customerId ?? undefined) as any,
         subtotal: saleTotals.subtotal,
         discount: saleForm.discount,
@@ -576,7 +575,6 @@ export default function Sales() {
         total: saleTotals.total,
         profit: totalProfit,
         cashierName: "System Admin", // Replace with auth user if available
-        receiptNumber,
         amountReceived: totalPaid,
         changeGiven: totalPaid > saleTotals.total ? totalPaid - saleTotals.total : 0,
         changeHandling: totalPaid > saleTotals.total ? "Cash" : undefined,
@@ -586,9 +584,10 @@ export default function Sales() {
         notes: saleForm.notes,
       });
 
+      const receiptNumber = result.receiptNumber;
       setLastReceipt(receiptNumber);
       setIsSuccess(true);
-      
+
       setSaleForm({
         customerId: undefined,
         items: [],
@@ -596,7 +595,7 @@ export default function Sales() {
         discount: 0,
         notes: '',
       });
-      toast.success(`Transaction ${receiptNumber} finalized`);
+      toast.success(`Transaction Complete: ${receiptNumber}`);
     } catch (error: any) {
       const errorMessage = error.data || error.message || "Failed to process sale";
       toast.error(typeof errorMessage === 'string' ? errorMessage : "Failed to process sale");
@@ -636,7 +635,7 @@ export default function Sales() {
           <button className="flex-1 md:flex-none px-6 py-3 bg-white/40 backdrop-blur-md border border-primary/20 text-primary rounded-2xl font-label-caps text-[11px] hover:bg-primary/5 transition-all shadow-sm flex items-center justify-center gap-2">
             <Download size={16} /> EXPORT REPORT
           </button>
-          <button 
+          <button
             onClick={() => router.push('/pos')}
             className="flex-1 md:flex-none px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
@@ -655,14 +654,14 @@ export default function Sales() {
             <div>
               <h3 className="font-headline-md text-lg text-primary">Dashboard Filters</h3>
               <p className="font-label-caps text-[9px] text-outline tracking-widest uppercase">
-                {startDate || endDate 
+                {startDate || endDate
                   ? `Active range: ${startDate || 'All Time'} to ${endDate || 'All Time'}`
                   : 'Active range: All Time'
                 }
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 w-full md:w-auto">
             <button
               onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
@@ -812,36 +811,36 @@ export default function Sales() {
 
       {/* KPI Section */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <KPIStats 
-          title="TOTAL REVENUE" 
-          value={formatCurrency(dynamicKPIs.totalRevenue)} 
-          trend={trends.revenue} 
-          icon={DollarSign} 
-          color="primary" 
+        <KPIStats
+          title="TOTAL REVENUE"
+          value={formatCurrency(dynamicKPIs.totalRevenue)}
+          trend={trends.revenue}
+          icon={DollarSign}
+          color="primary"
           sparklineData={getSparklineData('total')}
         />
-        <KPIStats 
-          title="TOTAL PROFIT" 
-          value={formatCurrency(dynamicKPIs.totalProfit)} 
-          trend={trends.profit} 
-          icon={TrendingUp} 
-          color="secondary" 
+        <KPIStats
+          title="TOTAL PROFIT"
+          value={formatCurrency(dynamicKPIs.totalProfit)}
+          trend={trends.profit}
+          icon={TrendingUp}
+          color="secondary"
           sparklineData={getSparklineData('profit')}
         />
-        <KPIStats 
-          title="TOTAL PENDING" 
-          value={formatCurrency(dynamicKPIs.totalPending)} 
-          trend={trends.totalPending} 
-          icon={AlertCircle} 
-          color="error" 
+        <KPIStats
+          title="TOTAL PENDING"
+          value={formatCurrency(dynamicKPIs.totalPending)}
+          trend={trends.totalPending}
+          icon={AlertCircle}
+          color="error"
           sparklineData={getSparklineData('total')}
         />
-        <KPIStats 
-          title="AVG TRANSACTION" 
-          value={formatCurrency(dynamicKPIs.avgTransaction)} 
-          trend={trends.avgTransaction} 
-          icon={ShoppingBag} 
-          color="primary" 
+        <KPIStats
+          title="AVG TRANSACTION"
+          value={formatCurrency(dynamicKPIs.avgTransaction)}
+          trend={trends.avgTransaction}
+          icon={ShoppingBag}
+          color="primary"
           sparklineData={getSparklineData('total')}
         />
       </div>
@@ -860,15 +859,15 @@ export default function Sales() {
               <AreaChart data={dynamicRevenueHistory}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1" >
-                    <stop offset="5%" stopColor="#8a4853" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#8a4853" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#8a4853" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="#8a4853" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} dx={-10} tickFormatter={(val) => `${val/1000}k`} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} dx={-10} tickFormatter={(val) => `${val / 1000}k`} />
+                <Tooltip
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                 />
                 <Area type="monotone" dataKey="revenue" stroke="#8a4853" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
@@ -909,7 +908,7 @@ export default function Sales() {
           <div className="mt-8 grid grid-cols-2 gap-4">
             {dynamicCategoryDistribution.map((entry: any, i: number) => (
               <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
                 <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name} ({entry.value}%)</span>
               </div>
             ))}
@@ -943,7 +942,7 @@ export default function Sales() {
           <div className="mt-8 grid grid-cols-2 gap-4">
             {dynamicPayoutDistribution.map((entry: any, i: number) => (
               <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: COLORS[i % COLORS.length]}}></div>
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
                 <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name} ({entry.value}%)</span>
               </div>
             ))}
@@ -959,10 +958,10 @@ export default function Sales() {
                 <BarChart data={topSellingItems} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e2de" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#857374'}} width={120} />
-                  <Tooltip 
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} width={120} />
+                  <Tooltip
                     cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                   />
                   <Bar dataKey="count" fill="#8a4853" radius={[0, 4, 4, 0]} barSize={24} />
                 </BarChart>
@@ -984,8 +983,8 @@ export default function Sales() {
             <h4 className="font-headline-md text-xl text-primary">Transactions</h4>
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Search Invoice # or Customer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -993,11 +992,11 @@ export default function Sales() {
               />
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="relative flex-1 md:w-48">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={14} />
-              <select 
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white/50 border border-outline-variant/30 rounded-xl text-[11px] font-label-caps focus:ring-2 focus:ring-primary/10 outline-none transition-all appearance-none cursor-pointer"
@@ -1009,7 +1008,7 @@ export default function Sales() {
                 <option value="Refunded">Refunded</option>
               </select>
             </div>
-            <button 
+            <button
               onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
               className={`p-2 border border-outline-variant/30 rounded-xl hover:bg-white transition-all text-outline ${isFiltersExpanded ? 'bg-primary/10 text-primary border-primary/20 shadow-sm' : ''}`}
               title="Toggle Advanced Filters"
@@ -1023,7 +1022,7 @@ export default function Sales() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-primary/5 border-b border-primary/10 font-label-caps text-[11px] text-primary">
-                <th className="px-8 py-5">INVOICE NO.</th>
+                <th className="px-8 py-5">ORDER Nº</th>
                 <th className="px-6 py-5">CUSTOMER</th>
                 <th className="px-6 py-5">ITEMS</th>
                 <th className="px-6 py-5">TOTAL AMOUNT</th>
@@ -1035,13 +1034,13 @@ export default function Sales() {
             </thead>
             <tbody className="divide-y divide-primary/5">
               {filteredSales.map((sale) => (
-                <tr 
-                  key={sale._id} 
+                <tr
+                  key={sale._id}
                   className="hover:bg-white/40 transition-colors group cursor-pointer"
                   onClick={() => setSelectedSale(sale)}
                 >
                   <td className="px-8 py-5 font-data-tabular text-sm font-bold text-primary">
-                    {sale.receiptNumber}
+                    {sale.receiptNumber?.replace("INV-", "ORD-")}
                   </td>
                   <td className="px-6 py-5">
                     <div>
@@ -1072,11 +1071,10 @@ export default function Sales() {
                     </span>
                   </td>
                   <td className="px-6 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      sale.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
-                      sale.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
-                      'bg-error-container/20 text-error'
-                    }`}>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${sale.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :
+                        sale.status === 'Partially Paid' ? 'bg-primary/10 text-primary' :
+                          'bg-error-container/20 text-error'
+                      }`}>
                       {sale.status}
                     </span>
                   </td>
@@ -1101,14 +1099,14 @@ export default function Sales() {
       <AnimatePresence>
         {selectedSale && (
           <div className="fixed inset-0 z-[100] flex items-center justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedSale(null)}
               className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -1118,14 +1116,13 @@ export default function Sales() {
               {/* Drawer Header */}
               <div className="p-8 border-b border-outline-variant/30 flex justify-between items-start bg-white/40 backdrop-blur-md">
                 <div>
-                  <h2 className="font-headline-md text-2xl text-primary">{selectedSale.receiptNumber}</h2>
+                  <h2 className="font-headline-md text-2xl text-primary">{selectedSale.receiptNumber?.replace("INV-", "ORD-")}</h2>
                   <p className="font-label-caps text-[10px] text-outline tracking-widest mt-1">
                     TRANSACTION COMPLETED ON {new Date(selectedSale._creationTime).toLocaleDateString()} AT {new Date(selectedSale._creationTime).toLocaleTimeString()} BY {selectedSale.cashierName?.toUpperCase() || 'SYSTEM'}
                   </p>
                   <div className="mt-3 flex gap-2">
-                    <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold ${
-                      selectedSale.status === 'Paid' ? 'bg-secondary-container/20 text-secondary' : 'bg-primary/10 text-primary'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold ${selectedSale.status === 'Paid' ? 'bg-secondary-container/20 text-secondary' : 'bg-primary/10 text-primary'
+                      }`}>
                       {selectedSale.status.toUpperCase()}
                     </span>
                     <span className="px-2 py-0.5 rounded-lg bg-surface-container-highest text-outline text-[9px] font-bold">
@@ -1133,7 +1130,7 @@ export default function Sales() {
                     </span>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setSelectedSale(null)}
                   className="p-2 hover:bg-primary/5 rounded-full text-outline transition-colors"
                 >
@@ -1199,7 +1196,7 @@ export default function Sales() {
                       <span className="text-on-surface font-bold font-headline-md">Invoice Total</span>
                       <span className="font-data-tabular font-bold text-xl text-primary">{formatCurrency(selectedSale.total)}</span>
                     </div>
-                    
+
                     {/* Tenders Received */}
                     {selectedSale.paymentBreakdown?.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-outline-variant/30 space-y-2">
@@ -1241,7 +1238,7 @@ export default function Sales() {
                     <Printer size={18} />
                     <span className="font-label-caps text-[8px]">PRINT</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleRemoveSale(selectedSale._id)}
                     className="flex flex-col items-center gap-2 p-3 bg-white border border-error/20 rounded-2xl text-error hover:bg-error/5 transition-all"
                   >
@@ -1259,14 +1256,14 @@ export default function Sales() {
       <AnimatePresence>
         {isAddingSale && (
           <div className="fixed inset-0 z-[110] flex items-center justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAddingSale(false)}
               className="absolute inset-0 bg-black/40 backdrop-blur-md"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -1286,7 +1283,7 @@ export default function Sales() {
               <div className="flex-1 overflow-y-auto">
                 <AnimatePresence mode="wait">
                   {isSuccess ? (
-                    <motion.div 
+                    <motion.div
                       key="success"
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -1299,13 +1296,13 @@ export default function Sales() {
                       <p className="font-body-md text-on-surface-variant mb-8">
                         The sale has been successfully recorded in the vault.
                       </p>
-                      
+
                       <div className="w-full bg-white/40 border border-white/60 rounded-3xl p-6 mb-10">
                         <p className="font-label-caps text-[10px] text-outline mb-2">RECEIPT NUMBER</p>
                         <p className="font-data-tabular text-2xl font-bold text-primary">{lastReceipt}</p>
                       </div>
 
-                      <button 
+                      <button
                         onClick={() => {
                           setIsAddingSale(false);
                           setIsSuccess(false);
@@ -1316,7 +1313,7 @@ export default function Sales() {
                       </button>
                     </motion.div>
                   ) : (
-                    <motion.div 
+                    <motion.div
                       key="pos-form"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -1326,10 +1323,10 @@ export default function Sales() {
                       {/* Customer Selection */}
                       <section>
                         <label className="font-label-caps text-[11px] text-outline mb-4 block">1. LINK CLIENT ACCOUNT</label>
-                        <select 
+                        <select
                           className="w-full p-4 bg-white/40 border border-white/60 rounded-2xl text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all"
                           value={saleForm.customerId || ''}
-                          onChange={(e) => setSaleForm({...saleForm, customerId: e.target.value || undefined})}
+                          onChange={(e) => setSaleForm({ ...saleForm, customerId: e.target.value || undefined })}
                         >
                           <option value="">WALK-IN CUSTOMER (NO ACCOUNT)</option>
                           {customers.map(c => (
@@ -1343,14 +1340,14 @@ export default function Sales() {
                         <label className="font-label-caps text-[11px] text-outline block">2. SELECT BOUTIQUE PIECES</label>
                         <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-1">
                           {products.filter(p => p.stock > 0).map(p => (
-                            <button 
+                            <button
                               key={p._id}
                               onClick={() => {
                                 const existing = saleForm.items.find(i => i.productId === p._id);
                                 if (existing) {
-                                  setSaleForm({...saleForm, items: saleForm.items.map(i => i.productId === p._id ? {...i, quantity: i.quantity + 1} : i)});
+                                  setSaleForm({ ...saleForm, items: saleForm.items.map(i => i.productId === p._id ? { ...i, quantity: i.quantity + 1 } : i) });
                                 } else {
-                                  setSaleForm({...saleForm, items: [...saleForm.items, { productId: p._id, name: p.name, quantity: 1, price: p.sellingPrice }]});
+                                  setSaleForm({ ...saleForm, items: [...saleForm.items, { productId: p._id, name: p.name, quantity: 1, price: p.sellingPrice }] });
                                 }
                               }}
                               className="p-4 bg-white/60 border border-white/80 rounded-2xl flex flex-col items-start gap-2 hover:bg-white transition-all text-left group"
@@ -1378,8 +1375,8 @@ export default function Sales() {
                                   <span className="font-data-tabular text-[10px] text-outline">UNIT: {formatCurrency(item.price)}</span>
                                 </div>
                               </div>
-                              <button 
-                                onClick={() => setSaleForm({...saleForm, items: saleForm.items.filter((_, i) => i !== idx)})}
+                              <button
+                                onClick={() => setSaleForm({ ...saleForm, items: saleForm.items.filter((_, i) => i !== idx) })}
                                 className="p-2 text-error hover:bg-error/10 rounded-full"
                               >
                                 <X size={16} />
@@ -1399,10 +1396,10 @@ export default function Sales() {
                           </div>
                           <div className="flex justify-between items-center text-sm">
                             <span className="text-outline">DISCOUNT (Mt)</span>
-                            <input 
-                              type="number" 
+                            <input
+                              type="number"
                               value={saleForm.discount}
-                              onChange={(e) => setSaleForm({...saleForm, discount: parseFloat(e.target.value) || 0})}
+                              onChange={(e) => setSaleForm({ ...saleForm, discount: parseFloat(e.target.value) || 0 })}
                               className="w-24 text-right bg-transparent border-b border-primary/20 font-data-tabular font-bold focus:border-primary outline-none"
                             />
                           </div>
@@ -1416,19 +1413,19 @@ export default function Sales() {
                       {/* Payment Breakdown */}
                       <section>
                         <label className="font-label-caps text-[11px] text-outline mb-4 block">4. PAYMENT METHODS & SPLITS</label>
-                        
+
                         <div className="space-y-4">
                           {saleForm.paymentBreakdown.map((pay, idx) => (
-                            <motion.div 
+                            <motion.div
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
-                              key={idx} 
+                              key={idx}
                               className="flex gap-4 items-center"
                             >
-                              <select 
+                              <select
                                 className="flex-1 p-4 bg-white/40 border border-white/60 rounded-2xl text-xs font-bold"
                                 value={pay.method}
-                                onChange={(e) => setSaleForm({...saleForm, paymentBreakdown: saleForm.paymentBreakdown.map((p, i) => i === idx ? {...p, method: e.target.value} : p)})}
+                                onChange={(e) => setSaleForm({ ...saleForm, paymentBreakdown: saleForm.paymentBreakdown.map((p, i) => i === idx ? { ...p, method: e.target.value } : p) })}
                               >
                                 <option>Cash</option>
                                 <option>M-Pesa</option>
@@ -1438,16 +1435,16 @@ export default function Sales() {
                                 <option>Bank Transfer</option>
                                 <option>Card</option>
                               </select>
-                              <input 
-                                type="number" 
+                              <input
+                                type="number"
                                 placeholder="Amount"
                                 value={pay.amount}
-                                onChange={(e) => setSaleForm({...saleForm, paymentBreakdown: saleForm.paymentBreakdown.map((p, i) => i === idx ? {...p, amount: parseFloat(e.target.value) || 0} : p)})}
+                                onChange={(e) => setSaleForm({ ...saleForm, paymentBreakdown: saleForm.paymentBreakdown.map((p, i) => i === idx ? { ...p, amount: parseFloat(e.target.value) || 0 } : p) })}
                                 className="flex-1 p-4 bg-white/40 border border-white/60 rounded-2xl font-data-tabular text-sm"
                               />
                               {saleForm.paymentBreakdown.length > 1 && (
-                                <button 
-                                  onClick={() => setSaleForm({...saleForm, paymentBreakdown: saleForm.paymentBreakdown.filter((_, i) => i !== idx)})}
+                                <button
+                                  onClick={() => setSaleForm({ ...saleForm, paymentBreakdown: saleForm.paymentBreakdown.filter((_, i) => i !== idx) })}
                                   className="p-2 text-outline/40 hover:text-error transition-colors"
                                 >
                                   <Trash2 size={16} />
@@ -1455,10 +1452,10 @@ export default function Sales() {
                               )}
                             </motion.div>
                           ))}
-                          
+
                           <div className="flex justify-between items-center px-2">
-                            <button 
-                              onClick={() => setSaleForm({...saleForm, paymentBreakdown: [...saleForm.paymentBreakdown, { method: 'BCI', amount: 0 }]})}
+                            <button
+                              onClick={() => setSaleForm({ ...saleForm, paymentBreakdown: [...saleForm.paymentBreakdown, { method: 'BCI', amount: 0 }] })}
                               className="text-xs font-label-caps text-primary hover:underline flex items-center gap-1"
                             >
                               <Plus size={14} /> ADD PAYMENT METHOD
@@ -1481,7 +1478,7 @@ export default function Sales() {
               {/* POS Footer */}
               {!isSuccess && (
                 <div className="p-8 border-t border-outline-variant/30 bg-white/60 sticky bottom-0">
-                  <button 
+                  <button
                     onClick={handleRegisterSale}
                     disabled={saleForm.items.length === 0}
                     className="w-full py-5 bg-primary text-on-primary rounded-2xl font-label-caps text-sm shadow-2xl shadow-primary/30 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"

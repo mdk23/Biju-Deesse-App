@@ -636,7 +636,7 @@ export const create = mutation({
       }
     }
 
-    return transactionId;
+    return { transactionId, receiptNumber: finalReceiptNumber };
   },
 });
 
