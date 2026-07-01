@@ -15,7 +15,8 @@ export default defineSchema({
     description: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
   }).index("by_code", ["code"])
-    .index("by_category", ["category"]),
+    .index("by_category", ["category"])
+    .index("by_archived", ["archived"]),
 
   customers: defineTable({
     firstName: v.string(),
@@ -38,7 +39,8 @@ export default defineSchema({
     lastPurchaseDate: v.optional(v.number()),
     notes: v.optional(v.string()),
   }).index("by_last_name", ["lastName"])
-    .index("by_phone", ["phone1"]),
+    .index("by_phone", ["phone1"])
+    .index("by_totalSpent", ["totalSpent"]),
 
   transactions: defineTable({
     customerId: v.optional(v.id("customers")),

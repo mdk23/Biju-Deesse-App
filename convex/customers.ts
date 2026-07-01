@@ -48,7 +48,7 @@ export const upsert = mutation({
       // Increment global counter
       const globalCounter = await ctx.db
         .query("globalCounters")
-        .filter((q) => q.eq(q.field("id"), "main"))
+        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
         .first();
       if (globalCounter) {
         await ctx.db.patch(globalCounter._id, {
@@ -70,7 +70,7 @@ export const remove = mutation({
     // Decrement global counter
     const globalCounter = await ctx.db
       .query("globalCounters")
-      .filter((q) => q.eq(q.field("id"), "main"))
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
       .first();
     if (globalCounter) {
       await ctx.db.patch(globalCounter._id, {
@@ -88,12 +88,8 @@ export const getTopSpenders = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("customers")
-      .withIndex("by_last_name") 
-      .take(1000)
-      .then((customers) => 
-        customers
-          .sort((a, b) => b.totalSpent - a.totalSpent)
-          .slice(0, args.limit)
-      );
+      .withIndex("by_totalSpent")
+      .order("desc")
+      .take(args.limit);
   },
 });

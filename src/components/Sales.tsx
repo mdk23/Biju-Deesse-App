@@ -239,7 +239,7 @@ export default function Sales() {
     const avgTransaction = filteredSales.length > 0 ? (totalRevenue / filteredSales.length) : 0;
     
     // Valuation is overall product inventory value
-    const estimatedValuation = products.reduce((acc, p) => acc + (p.costPrice * p.stock), 0);
+    const estimatedValuation = brief?.estimatedValuation || 0;
     const totalPending = filteredSales.reduce((acc, s) => {
       const amountReceived = s.amountReceived || 0;
       const pending = s.total - amountReceived;

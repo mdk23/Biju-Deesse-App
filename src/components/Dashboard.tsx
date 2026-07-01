@@ -70,7 +70,7 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<'today' | 'yesterday' | 'this_week'>('today');
   const brief = useQuery(api.analytics.getExecutiveBrief, { period });
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
-  const recentTransactions = useQuery(api.transactions.list);
+  const recentTransactions = useQuery(api.transactions.getRecent, { limit: 10 });
   const lowStock = useQuery(api.products.getLowStock);
 
   const filteredRecentTransactions = (recentTransactions || []).filter(tx => {

@@ -82,16 +82,23 @@ export async function recomputeCustomerIntelligence(db: DatabaseWriter | Databas
   const now = Date.now();
   const thirtyDaysAgo = now - 30 * 24 * 3600 * 1000;
 
+  // Fetch all payments for this customer in a single query to avoid N+1 query pattern
+  const allPayments = await db
+    .query("payments")
+    .withIndex("by_customer", (q) => q.eq("customerId", customerId))
+    .collect();
+
+  // Group payments by transactionId in-memory
+  const paymentsByTxId = new Map<string, number>();
+  for (const p of allPayments) {
+    paymentsByTxId.set(p.transactionId, (paymentsByTxId.get(p.transactionId) || 0) + p.amount);
+  }
+
   let totalLifetimePayments = 0;
   let oldestUnpaidDate = now;
 
   for (const tx of transactions) {
-    const payments = await db
-      .query("payments")
-      .withIndex("by_transaction", (q) => q.eq("transactionId", tx._id))
-      .collect();
-
-    const paid = payments.reduce((acc, p) => acc + p.amount, 0);
+    const paid = paymentsByTxId.get(tx._id) || 0;
     totalLifetimePayments += paid;
     
     // If the individual transaction was underpaid, track its date for overdue logic

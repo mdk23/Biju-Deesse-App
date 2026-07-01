@@ -231,18 +231,36 @@ export const getCaixaReports = query({
     endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Collect sessions
-    let sessionsQuery = ctx.db.query("caixaSessions");
-    const sessions = await sessionsQuery.order("desc").take(500);
+    if (args.startDate !== undefined && args.endDate !== undefined) {
+      return await ctx.db
+        .query("caixaSessions")
+        .withIndex("by_openedAt", (q) =>
+          q.gte("openedAt", args.startDate!).lte("openedAt", args.endDate!)
+        )
+        .order("desc")
+        .take(500);
+    }
+    
+    if (args.startDate !== undefined) {
+      return await ctx.db
+        .query("caixaSessions")
+        .withIndex("by_openedAt", (q) => q.gte("openedAt", args.startDate!))
+        .order("desc")
+        .take(500);
+    }
+    
+    if (args.endDate !== undefined) {
+      return await ctx.db
+        .query("caixaSessions")
+        .withIndex("by_openedAt", (q) => q.lte("openedAt", args.endDate!))
+        .order("desc")
+        .take(500);
+    }
 
-    // Filter by date if provided
-    const filtered = sessions.filter(s => {
-      const ts = s.openedAt;
-      if (args.startDate && ts < args.startDate) return false;
-      if (args.endDate && ts > args.endDate) return false;
-      return true;
-    });
-
-    return filtered;
+    return await ctx.db
+      .query("caixaSessions")
+      .withIndex("by_openedAt")
+      .order("desc")
+      .take(500);
   }
 });

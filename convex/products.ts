@@ -39,7 +39,7 @@ export const list = query({
     const archivedStatus = args.archived ?? false;
     return await ctx.db
       .query("products")
-      .filter((q) => q.eq(q.field("archived"), archivedStatus))
+      .withIndex("by_archived", (q) => q.eq("archived", archivedStatus))
       .take(500);
   },
 });
@@ -106,7 +106,7 @@ export const upsert = mutation({
     if (valueDiff !== 0) {
       const globalCounter = await ctx.db
         .query("globalCounters")
-        .filter((q) => q.eq(q.field("id"), "main"))
+        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
         .first();
       if (globalCounter) {
         await ctx.db.patch(globalCounter._id, {
@@ -136,7 +136,7 @@ export const remove = mutation({
       
       const globalCounter = await ctx.db
         .query("globalCounters")
-        .filter((q) => q.eq(q.field("id"), "main"))
+        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
         .first();
       if (globalCounter) {
         await ctx.db.patch(globalCounter._id, {
@@ -189,7 +189,7 @@ export const adjustStock = mutation({
     if (valueDiff !== 0) {
       const globalCounter = await ctx.db
         .query("globalCounters")
-        .filter((q) => q.eq(q.field("id"), "main"))
+        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
         .first();
       if (globalCounter) {
         await ctx.db.patch(globalCounter._id, {
@@ -229,12 +229,8 @@ export const getLowStock = query({
   handler: async (ctx) => {
     return await ctx.db
       .query("products")
-      .filter((q) => 
-        q.and(
-          q.eq(q.field("archived"), false),
-          q.lte(q.field("stock"), q.field("reorderLevel"))
-        )
-      )
+      .withIndex("by_archived", (q) => q.eq("archived", false))
+      .filter((q) => q.lte(q.field("stock"), q.field("reorderLevel")))
       .take(500);
   },
 });

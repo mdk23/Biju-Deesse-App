@@ -94,6 +94,50 @@ export const list = query({
   },
 });
 
+export const getRecent = query({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    const transactions = await ctx.db.query("transactions").order("desc").take(args.limit);
+    
+    return await Promise.all(transactions.map(async (tx) => {
+      let customerName = tx.customerName;
+      let customerTier = tx.customerTier;
+      
+      // Fallback rule for older transactions
+      if (!customerName && tx.customerId) {
+        const customer = await ctx.db.get(tx.customerId);
+        customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
+        customerTier = customer?.financialTier || "Regular";
+      }
+      
+      const itemsWithDetails = await Promise.all((tx.items || []).map(async (item) => {
+        if (item.name) return item; // Has denormalized data
+        
+        const product = await ctx.db.get(item.productId);
+        return {
+          ...item,
+          name: product?.name || "Unknown Product",
+          photo: product?.imageUrl || "",
+        };
+      }));
+
+      // Calculate total paid from breakdown
+      const totalPaid = tx.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
+      const balance = Math.max(0, tx.total - totalPaid);
+      
+      return {
+        ...tx,
+        items: itemsWithDetails,
+        customerName: customerName || "Walk-in",
+        customerTier: customerTier || "Regular",
+        paymentStatus: balance === 0 ? "Paid" : (totalPaid > 0 ? "Partial" : "Pending"),
+        balance,
+        paymentMethod: tx.paymentBreakdown.length === 1 ? tx.paymentBreakdown[0].method : "Split",
+      };
+    }));
+  },
+});
+
 export const create = mutation({
   args: {
     customerId: v.optional(v.id("customers")),
@@ -493,7 +537,7 @@ export const create = mutation({
 
     const globalCounter = await ctx.db
       .query("globalCounters")
-      .filter((q) => q.eq(q.field("id"), "main"))
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
       .first();
 
     if (globalCounter) {
@@ -599,7 +643,10 @@ export const create = mutation({
 // Analytics: Revenue & Profit
 export const getAnalytics = query({
   handler: async (ctx) => {
-    const globalCounter = await ctx.db.query("globalCounters").filter((q) => q.eq(q.field("id"), "main")).first();
+    const globalCounter = await ctx.db
+      .query("globalCounters")
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
+      .first();
     return {
       totalRevenue: globalCounter?.totalRevenue || 0,
       totalProfit: globalCounter?.totalProfit || 0,
@@ -799,7 +846,7 @@ export const remove = mutation({
 
     const globalCounter = await ctx.db
       .query("globalCounters")
-      .filter((q) => q.eq(q.field("id"), "main"))
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
       .first();
 
     if (globalCounter) {
