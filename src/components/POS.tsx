@@ -94,12 +94,12 @@ export default function POS() {
       0,
     );
     const discount = cart.reduce(
-      (acc, item) => acc + item.price * item.quantity * (item.discount / 100),
+      (acc, item) => acc + (item.discount || 0),
       0,
     );
     const total = subtotal - discount;
     const profit = cart.reduce((acc, item) => {
-      const itemDiscount = item.price * item.quantity * (item.discount / 100);
+      const itemDiscount = item.discount || 0;
       const cost = (item.costPrice || 0) * item.quantity;
       const revenue = item.price * item.quantity - itemDiscount;
       return acc + (revenue - cost);
@@ -504,14 +504,17 @@ export default function POS() {
                       <button
                         onClick={() =>
                           setCart(
-                            cart.map((i) =>
-                              i.id === item.id
-                                ? {
+                            cart.map((i) => {
+                              if (i.id === item.id) {
+                                const newQty = Math.max(1, i.quantity - 1);
+                                return {
                                   ...i,
-                                  quantity: Math.max(1, i.quantity - 1),
-                                }
-                                : i,
-                            ),
+                                  quantity: newQty,
+                                  discount: Math.min(i.discount || 0, i.price * newQty),
+                                };
+                              }
+                              return i;
+                            }),
                           )
                         }
                         className="w-6 h-6 border border-outline-variant/50 rounded flex items-center justify-center text-on-surface-variant hover:bg-white"
@@ -535,9 +538,26 @@ export default function POS() {
                       </button>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-primary font-bold">
-                        Disc: {item.discount}%
-                      </span>
+                      <div className="flex items-center gap-1 text-[10px] text-primary font-bold">
+                        <span>Disc: Mt</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.price * item.quantity}
+                          value={item.discount || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const maxDisc = item.price * item.quantity;
+                            const clampedVal = Math.min(Math.max(0, val), maxDisc);
+                            setCart(
+                              cart.map((i) =>
+                                i.id === item.id ? { ...i, discount: clampedVal } : i
+                              )
+                            );
+                          }}
+                          className="w-14 px-1 py-0.5 bg-surface-container/60 border border-outline-variant/30 rounded text-[10px] font-bold text-primary outline-none focus:border-primary transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </div>
                       <button
                         onClick={() =>
                           setCart(cart.filter((i) => i.id !== item.id))
