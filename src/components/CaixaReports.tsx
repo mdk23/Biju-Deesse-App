@@ -3,7 +3,12 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Download, Calendar, BarChart, TrendingUp, AlertCircle, Search } from 'lucide-react';
+import { Id } from '../../convex/_generated/dataModel';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Download, Calendar, BarChart, TrendingUp, AlertCircle, Search,
+  X, Lock, Unlock, ArrowDownLeft, ArrowUpRight, Wallet, Clock, User
+} from 'lucide-react';
 
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
@@ -18,6 +23,14 @@ export default function CaixaReports() {
   const [dateRange, setDateRange] = useState('ALL');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [selectedSession, setSelectedSession] = useState<any>(null);
+
+  const sessionDetails = useQuery(
+    api.caixa.getSessionReportDetails,
+    selectedSession ? { sessionId: selectedSession._id as Id<"caixaSessions"> } : "skip"
+  );
+
+  const selectedSessionMovements = sessionDetails?.movements || [];
 
   const filterParams = useMemo(() => {
     const now = new Date();
@@ -85,9 +98,9 @@ export default function CaixaReports() {
             Audit logs and summaries of cash register sessions.
           </p>
         </div>
-        
+
         <div className="flex gap-4 items-center">
-          <select 
+          <select
             value={dateRange}
             onChange={e => setDateRange(e.target.value)}
             className="px-4 py-3 rounded-2xl text-xs bg-white/60 border border-primary/10 focus:ring-2 focus:ring-primary/20 outline-none font-label-caps cursor-pointer shadow-sm"
@@ -140,13 +153,16 @@ export default function CaixaReports() {
               {reports.length === 0 ? (
                 <tr><td colSpan={8} className="p-8 text-center text-outline">No sessions found for this period.</td></tr>
               ) : reports.map((r) => (
-                <tr key={r._id} className="hover:bg-white/40 transition-colors">
+                <tr
+                  key={r._id}
+                  onClick={() => setSelectedSession(r)}
+                  className="hover:bg-primary/5 cursor-pointer transition-colors"
+                >
                   <td className="px-6 py-4 font-data-tabular text-xs text-primary font-bold">{formatDate(r.openedAt)}</td>
                   <td className="px-6 py-4 text-xs text-outline">{r.openedBy}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${
-                      r.status === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-surface border border-primary/10 text-outline'
-                    }`}>
+                    <span className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${r.status === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-surface border border-primary/10 text-outline'
+                      }`}>
                       {r.status}
                     </span>
                   </td>
@@ -167,6 +183,209 @@ export default function CaixaReports() {
           </table>
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedSession && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-end">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedSession(null)}
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-2xl h-full bg-[#fdfbf7] shadow-2xl flex flex-col border-l border-white/40 overflow-hidden"
+            >
+              {/* Drawer Header */}
+              <div className="p-8 border-b border-primary/10 flex justify-between items-start bg-white/40 backdrop-blur-md">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${selectedSession.status === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-surface border border-primary/10 text-outline'
+                      }`}>
+                      {selectedSession.status}
+                    </span>
+                    <span className="text-[10px] text-outline font-data-tabular">
+                      Session ID: {selectedSession._id}
+                    </span>
+                  </div>
+                  <h2 className="font-headline-md text-2xl text-primary">
+                    Session: {formatDate(selectedSession.openedAt)}
+                  </h2>
+                  <p className="text-xs text-outline flex items-center gap-2 mt-1">
+                    <User size={12} /> Opened by: <span className="font-bold text-primary">{selectedSession.openedBy}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedSession(null)}
+                  className="p-2 hover:bg-primary/5 rounded-full text-outline hover:text-primary transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                {/* Financial Summary */}
+                <div>
+                  <h4 className="text-[10px] font-label-caps text-outline uppercase tracking-wider mb-3">Financial Summary</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Opening Float</p>
+                      <p className="text-lg font-data-tabular font-bold text-primary mt-1">
+                        {formatCurrency(sessionDetails?.summary?.openingAmount ?? selectedSession.openingAmount)}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Cash Received</p>
+                      <p className="text-lg font-data-tabular font-bold text-emerald-600 mt-1">
+                        {formatCurrency(sessionDetails?.summary?.totalCashReceived ?? 0)}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Electronic Payments</p>
+                      <p className="text-lg font-data-tabular font-bold text-primary mt-1">
+                        {formatCurrency(sessionDetails?.summary?.totalElectronicReceived ?? 0)}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Expected Balance</p>
+                      <p className="text-lg font-data-tabular font-bold text-primary mt-1">
+                        {formatCurrency(sessionDetails?.summary?.expectedCash ?? selectedSession.expectedCash)}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Counted Cash</p>
+                      <p className="text-lg font-data-tabular font-bold text-primary mt-1">
+                        {selectedSession.countedCash !== undefined ? formatCurrency(selectedSession.countedCash) : '-'}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm">
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Variance</p>
+                      <p className={`text-lg font-data-tabular font-bold mt-1 ${selectedSession.variance !== undefined && Math.abs(selectedSession.variance) > 5 ? 'text-error' : 'text-emerald-600'
+                        }`}>
+                        {selectedSession.variance !== undefined ? formatCurrency(selectedSession.variance) : '-'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <ArrowDownLeft size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Cash In</p>
+                      <p className="text-sm font-data-tabular font-bold text-primary mt-0.5">
+                        {formatCurrency(sessionDetails?.summary?.totalCashIn ?? selectedSession.totalCashIn)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center">
+                      <ArrowUpRight size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Cash Out</p>
+                      <p className="text-sm font-data-tabular font-bold text-primary mt-0.5">
+                        {formatCurrency(sessionDetails?.summary?.totalCashOut ?? selectedSession.totalCashOut)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <TrendingUp size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Debt Recoveries</p>
+                      <p className="text-sm font-data-tabular font-bold text-primary mt-0.5">
+                        {formatCurrency(sessionDetails?.summary?.totalDebtRecoveries ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-white border border-primary/5 shadow-sm flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Wallet size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-label-caps text-outline uppercase tracking-wider">Credit Redeemed</p>
+                      <p className="text-sm font-data-tabular font-bold text-primary mt-0.5">
+                        {formatCurrency(sessionDetails?.summary?.totalCreditRedemptions ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedSession.closingNote && (
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                    <p className="text-[10px] font-label-caps text-outline uppercase tracking-wider mb-1">Closing Note</p>
+                    <p className="text-sm text-primary italic">"{selectedSession.closingNote}"</p>
+                  </div>
+                )}
+
+                {/* Transaction Ledger */}
+                <div>
+                  <h4 className="text-[10px] font-label-caps text-outline uppercase tracking-wider mb-3">Transaction & Movement Ledger</h4>
+
+                  {selectedSessionMovements.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-2xl border border-primary/5 text-outline text-sm">
+                      No movements recorded in this session.
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-primary/5 overflow-hidden shadow-sm">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-primary/5 text-[9px] font-label-caps text-outline uppercase">
+                          <tr>
+                            <th className="px-4 py-3">Time</th>
+                            <th className="px-4 py-3">Type</th>
+                            <th className="px-4 py-3">Description</th>
+                            <th className="px-4 py-3 text-right">Amount</th>
+                            <th className="px-4 py-3 text-right">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-primary/5">
+                          {selectedSessionMovements.map((m: any) => (
+                            <tr key={m._id} className="hover:bg-primary/5 transition-colors">
+                              <td className="px-4 py-3 font-data-tabular text-outline">
+                                {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${m.type === 'SALE' || m.type === 'CASH_IN' ? 'bg-emerald-100 text-emerald-700' :
+                                    m.type === 'OPENING' ? 'bg-blue-100 text-blue-700' :
+                                      m.type === 'CLOSING' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-rose-100 text-rose-700'
+                                  }`}>
+                                  {m.type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 max-w-[180px] truncate text-primary font-medium" title={m.description}>
+                                {m.description}
+                              </td>
+                              <td className={`px-4 py-3 text-right font-data-tabular font-bold ${m.type === 'SALE' || m.type === 'CASH_IN' || m.type === 'OPENING' ? 'text-emerald-600' : 'text-rose-600'
+                                }`}>
+                                {m.type === 'SALE' || m.type === 'CASH_IN' || m.type === 'OPENING' ? '+' : '-'}{formatCurrency(m.amount)}
+                              </td>
+                              <td className="px-4 py-3 text-right font-data-tabular text-primary">
+                                {formatCurrency(m.runningBalance)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

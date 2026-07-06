@@ -43,6 +43,7 @@ export async function applyCustomerLedger(
     amount: number;
     description: string;
     referenceId?: string;
+    sessionId?: Id<"caixaSessions">;
   }
 ) {
   const customer = await db.get(customerId);
@@ -81,6 +82,7 @@ export async function applyCustomerLedger(
   // Insert Ledger Record
   const ledgerId = await db.insert("ledger", {
     customerId,
+    sessionId: params.sessionId,
     type: params.type,
     amount: params.amount,
     balanceAfter: { credit: creditBalance, debit: debitBalance },

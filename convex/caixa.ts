@@ -264,3 +264,74 @@ export const getCaixaReports = query({
       .take(500);
   }
 });
+
+export const getSessionReportDetails = query({
+  args: { sessionId: v.id("caixaSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return null;
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    const ledgerEntries = await ctx.db
+      .query("ledger")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    const movements = await ctx.db
+      .query("caixaMovements")
+      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    let totalCashReceived = 0;
+    let totalElectronicReceived = 0;
+
+    for (const p of payments) {
+      if (p.paymentMethod.toLowerCase() === "cash") {
+        totalCashReceived += p.amount;
+      } else {
+        totalElectronicReceived += p.amount;
+      }
+    }
+
+    const debtRecoveries = ledgerEntries.filter((l) => l.type === "PAYMENT");
+    const totalDebtRecoveries = debtRecoveries.reduce((sum, l) => sum + l.amount, 0);
+
+    const creditRedemptions = ledgerEntries.filter((l) => l.type === "USE_CREDIT");
+    const totalCreditRedemptions = creditRedemptions.reduce((sum, l) => sum + l.amount, 0);
+
+    const cashInMovements = movements.filter((m) => m.type === "CASH_IN");
+    const totalCashIn = cashInMovements.reduce((sum, m) => sum + m.amount, 0);
+
+    const cashOutMovements = movements.filter((m) => m.type === "CASH_OUT");
+    const totalCashOut = cashOutMovements.reduce((sum, m) => sum + m.amount, 0);
+
+    return {
+      session,
+      transactions,
+      payments,
+      ledgerEntries,
+      movements,
+      summary: {
+        openingAmount: session.openingAmount,
+        closingAmount: session.countedCash ?? null,
+        expectedCash: session.expectedCash,
+        variance: session.variance ?? 0,
+        totalCashReceived,
+        totalElectronicReceived,
+        totalCashIn,
+        totalCashOut,
+        totalDebtRecoveries,
+        totalCreditRedemptions,
+      }
+    };
+  }
+});

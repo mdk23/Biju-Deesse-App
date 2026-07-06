@@ -16,8 +16,8 @@ export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname() || '/';
   const { logout, user } = useAuth();
   
-  const firstLetter = user?.name ? user.name.charAt(0).toUpperCase() : user?.username?.charAt(0).toUpperCase() || '?';
-  const displayName = user?.name || user?.username || 'User';
+  const firstLetter = user?.username?.charAt(0).toUpperCase() || '?';
+  const displayName = user?.username || 'User';
 
   return (
     <div className="bg-atelier-gradient min-h-screen text-on-surface font-body-md overflow-x-hidden">

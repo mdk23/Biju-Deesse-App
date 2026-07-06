@@ -14,9 +14,12 @@ export default defineSchema({
     archived: v.boolean(),
     description: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_code", ["code"])
     .index("by_category", ["category"])
-    .index("by_archived", ["archived"]),
+    .index("by_archived", ["archived"])
+    .index("by_createdAt", ["createdAt"]),
 
   customers: defineTable({
     firstName: v.string(),
@@ -38,9 +41,12 @@ export default defineSchema({
     orderCount: v.optional(v.number()),
     lastPurchaseDate: v.optional(v.number()),
     notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_last_name", ["lastName"])
     .index("by_phone", ["phone1"])
-    .index("by_totalSpent", ["totalSpent"]),
+    .index("by_totalSpent", ["totalSpent"])
+    .index("by_createdAt", ["createdAt"]),
 
   transactions: defineTable({
     customerId: v.optional(v.id("customers")),
@@ -76,20 +82,31 @@ export default defineSchema({
     notes: v.optional(v.string()),
     customerName: v.optional(v.string()), // Denormalized customer name
     customerTier: v.optional(v.string()), // Denormalized customer tier
+    sessionId: v.optional(v.id("caixaSessions")),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_receipt", ["receiptNumber"])
-    .index("by_customer", ["customerId"]),
+    .index("by_customer", ["customerId"])
+    .index("by_session", ["sessionId"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_userId", ["cashierName"]),
 
   payments: defineTable({
     transactionId: v.id("transactions"),
     customerId: v.optional(v.id("customers")),
+    sessionId: v.id("caixaSessions"),
     amount: v.number(),
     paymentMethod: v.string(),
     reference: v.optional(v.string()), // Transaction reference from provider
     paymentDate: v.number(), // Timestamp
     status: v.string(), // "Completed", "Pending", "Failed"
     notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_transaction", ["transactionId"])
-    .index("by_customer", ["customerId"]),
+    .index("by_customer", ["customerId"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_session", ["sessionId"]),
 
   inventoryMovements: defineTable({
     productId: v.id("products"),
@@ -98,12 +115,16 @@ export default defineSchema({
     previousStock: v.number(),
     newStock: v.number(),
     reason: v.string(),
+    userId: v.optional(v.string()), // Tracks cashier/user making the adjustment
     createdAt: v.number(), // Timestamp
+    updatedAt: v.optional(v.number()),
   }).index("by_product", ["productId"])
-    .index("by_type", ["movementType"]),
+    .index("by_type", ["movementType"])
+    .index("by_userId", ["userId"]),
 
   ledger: defineTable({
     customerId: v.optional(v.id("customers")),
+    sessionId: v.optional(v.id("caixaSessions")),
     type: v.string(), // "CREDIT", "DEBIT", "PAYMENT", "REFUND", "SALE"
     amount: v.number(),
     balanceAfter: v.object({
@@ -113,8 +134,10 @@ export default defineSchema({
     referenceId: v.optional(v.string()), // Transaction or Payment ID
     description: v.string(),
     createdAt: v.number(), // Timestamp
+    updatedAt: v.optional(v.number()),
   }).index("by_customer", ["customerId"])
-    .index("by_type", ["type"]),
+    .index("by_type", ["type"])
+    .index("by_session", ["sessionId"]),
 
   caixaSessions: defineTable({
     openedBy: v.string(), // User ID or Name
@@ -129,8 +152,11 @@ export default defineSchema({
     totalCashIn: v.number(),
     totalCashOut: v.number(),
     closingNote: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_status", ["status"])
-    .index("by_openedAt", ["openedAt"]),
+    .index("by_openedAt", ["openedAt"])
+    .index("by_userId", ["openedBy"]),
 
   caixaMovements: defineTable({
     sessionId: v.id("caixaSessions"),
@@ -141,9 +167,12 @@ export default defineSchema({
     userId: v.string(),
     timestamp: v.number(),
     runningBalance: v.number(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_session", ["sessionId"])
     .index("by_timestamp", ["timestamp"])
-    .index("by_type", ["type"]),
+    .index("by_type", ["type"])
+    .index("by_userId", ["userId"]),
 
   auditLogs: defineTable({
     userId: v.string(),
@@ -274,7 +303,6 @@ export default defineSchema({
     username: v.string(),
     passwordHash: v.optional(v.string()),
     role: v.string(), // "admin", "manager", "POS"
-    name: v.optional(v.string()),
     blocked: v.optional(v.boolean()),
   }).index("by_username", ["username"])
     .index("by_clerkId", ["clerkId"]),

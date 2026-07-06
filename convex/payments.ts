@@ -3,7 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { applyCustomerLedger } from "./ledgerHelpers";
-import { validateCaixaForCash, recordCaixaCash } from "./caixaHelpers";
+import { validateCaixaForCash, recordCaixaCash, resolveCaixaSession } from "./caixaHelpers";
 
 export const list = query({
   handler: async (ctx) => {
@@ -42,19 +42,26 @@ export const addPayment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const now = Date.now();
+
     if (args.paymentMethod.toLowerCase() === "cash") {
-      await validateCaixaForCash(ctx.db);
+      await validateCaixaForCash(ctx.db, now);
     }
+
+    const session = await resolveCaixaSession(ctx.db, now);
 
     const paymentId = await ctx.db.insert("payments", {
       transactionId: args.transactionId,
       customerId: args.customerId,
+      sessionId: session._id,
       amount: args.amount,
       paymentMethod: args.paymentMethod,
       reference: args.reference,
-      paymentDate: Date.now(),
+      paymentDate: now,
       status: "Completed",
       notes: args.notes,
+      createdAt: now,
+      updatedAt: now,
     });
 
     await applyCustomerLedger(ctx.db, args.customerId, {
@@ -62,6 +69,7 @@ export const addPayment = mutation({
       amount: args.amount,
       description: `Manual payment via ${args.paymentMethod}`,
       referenceId: paymentId,
+      sessionId: session._id,
     });
 
     if (args.paymentMethod.toLowerCase() === "cash") {
@@ -71,11 +79,11 @@ export const addPayment = mutation({
         "CASH_IN",
         `Manual payment received for transaction ${args.transactionId}`,
         "System", // Ideally this would be the actual user, but we don't have it in args currently
+        now,
         paymentId
       );
     }
 
-    const now = Date.now();
     const todayStr = new Date(now).toISOString().split("T")[0];
 
     const dailyStat = await ctx.db

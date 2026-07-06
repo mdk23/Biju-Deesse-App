@@ -5,6 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { toast } from 'sonner';
+import { useAuth } from './AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Lock, Unlock, Wallet, ArrowDownLeft, ArrowUpRight, 
@@ -27,6 +28,7 @@ const formatDate = (ts: number) => {
 };
 
 export default function Caixa() {
+  const { user } = useAuth();
   const activeSession = useQuery(api.caixa.getActiveSession);
   const recentSessions = useQuery(api.caixa.getRecentSessions) || [];
   
@@ -67,7 +69,7 @@ export default function Caixa() {
     try {
       await openSessionMutation({
         openingAmount: Number(openingAmount),
-        userId: "System Admin" // Ideally from Auth
+        userId: user?.username || "System Admin"
       });
       toast.success("Caixa session successfully opened.");
       setIsOpening(false);
@@ -92,7 +94,7 @@ export default function Caixa() {
         sessionId: activeSession._id as Id<"caixaSessions">,
         countedCash: Number(countedCash),
         closingNote,
-        userId: "System Admin"
+        userId: user?.username || "System Admin"
       });
       toast.success("Caixa session closed successfully.");
       setIsClosing(false);
@@ -115,7 +117,7 @@ export default function Caixa() {
         type: movementType,
         amount: Number(movementAmount),
         description: movementNote,
-        userId: "System Admin"
+        userId: user?.username || "System Admin"
       });
       toast.success("Movement recorded successfully.");
       setIsAddingMovement(false);

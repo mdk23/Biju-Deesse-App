@@ -1,6 +1,10 @@
 import { DatabaseWriter, DatabaseReader } from "./_generated/server";
 import { ConvexError } from "convex/values";
 
+/**
+ * Returns the currently open Caixa session, if any.
+ * Note: Use resolveCaixaSession instead for transaction/payment attribution.
+ */
 export async function getActiveCaixaSession(db: DatabaseReader | DatabaseWriter) {
   const session = await db
     .query("caixaSessions")
@@ -9,35 +13,66 @@ export async function getActiveCaixaSession(db: DatabaseReader | DatabaseWriter)
   return session;
 }
 
-export async function validateCaixaForCash(db: DatabaseReader | DatabaseWriter) {
-  const session = await getActiveCaixaSession(db);
-  if (!session) {
-    throw new ConvexError("Cannot process cash transaction. No Caixa session open. Please open a session first.");
+/**
+ * Resolves the correct Caixa Session that was active at the given timestamp.
+ */
+export async function resolveCaixaSession(db: DatabaseReader | DatabaseWriter, timestamp: number) {
+  const sessions = await db.query("caixaSessions").collect();
+  const matching = sessions.filter((s) => {
+    if (timestamp < s.openedAt) return false;
+    if (s.closedAt !== undefined) {
+      return timestamp <= s.closedAt;
+    }
+    return s.status === "OPEN";
+  });
+
+  if (matching.length === 0) {
+    throw new ConvexError(
+      `No Caixa session found active at timestamp ${timestamp} (${new Date(timestamp).toLocaleString()}). Please open a Caixa session first.`
+    );
   }
-  const sessionDate = new Date(session.openedAt);
-  const today = new Date();
-  if (
-    sessionDate.getDate() !== today.getDate() ||
-    sessionDate.getMonth() !== today.getMonth() ||
-    sessionDate.getFullYear() !== today.getFullYear()
-  ) {
-    throw new ConvexError("Caixa Session from a previous day is still open. Please close it and open a new session for today.");
+  if (matching.length > 1) {
+    throw new ConvexError(
+      `Multiple overlapping Caixa sessions found for timestamp ${timestamp} (${new Date(timestamp).toLocaleString()}).`
+    );
+  }
+  return matching[0];
+}
+
+/**
+ * Validates that a Caixa session was active for the given timestamp (and if it's still open, that it is for today).
+ */
+export async function validateCaixaForCash(db: DatabaseReader | DatabaseWriter, timestamp: number) {
+  const session = await resolveCaixaSession(db, timestamp);
+  if (session.status === "OPEN") {
+    const sessionDate = new Date(session.openedAt);
+    const eventDate = new Date(timestamp);
+    if (
+      sessionDate.getDate() !== eventDate.getDate() ||
+      sessionDate.getMonth() !== eventDate.getMonth() ||
+      sessionDate.getFullYear() !== eventDate.getFullYear()
+    ) {
+      throw new ConvexError("Caixa Session from a previous day is still open. Please close it and open a new session for today.");
+    }
   }
   return session;
 }
 
+/**
+ * Records cash movements into the resolved Caixa session based on timestamp.
+ */
 export async function recordCaixaCash(
   db: DatabaseWriter,
   amount: number,
   type: "SALE" | "CASH_IN" | "SALE_REVERSAL",
   description: string,
   userId: string,
+  timestamp: number,
   referenceId?: string
 ) {
   if (amount <= 0) return;
 
-  const session = await getActiveCaixaSession(db);
-  if (!session) return; // If no session, we skip strictly (or we could throw, but validation usually happens earlier)
+  const session = await resolveCaixaSession(db, timestamp);
 
   const isReversal = type === "SALE_REVERSAL";
   const netCash = isReversal ? -amount : amount;
@@ -60,14 +95,14 @@ export async function recordCaixaCash(
     amount,
     description,
     userId,
-    timestamp: Date.now(),
+    timestamp,
     runningBalance,
     referenceId,
   });
 
   await db.insert("auditLogs", {
     userId,
-    timestamp: Date.now(),
+    timestamp,
     action: `CAIXA_${type}`,
     afterValue: { amount, runningBalance },
     referenceId: movementId,

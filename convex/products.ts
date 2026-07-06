@@ -93,14 +93,18 @@ export const upsert = mutation({
         if (!wasOut && isOut) diffOutOfStock = 1;
         if (wasOut && !isOut) diffOutOfStock = -1;
       }
-      await ctx.db.patch(id, data);
+      await ctx.db.patch(id, { ...data, updatedAt: Date.now() });
     } else {
       valueDiff = data.costPrice * data.stock;
       diffProducts = 1;
       diffUnits = data.stock;
       if (data.stock <= data.reorderLevel && data.stock > 0) diffLowStock = 1;
       if (data.stock <= 0) diffOutOfStock = 1;
-      idToReturn = await ctx.db.insert("products", data);
+      idToReturn = await ctx.db.insert("products", {
+        ...data,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
     }
 
     if (valueDiff !== 0) {
@@ -156,13 +160,13 @@ export const remove = mutation({
   },
 });
 
-// Adjust inventory stock with logging
 export const adjustStock = mutation({
   args: {
     productId: v.id("products"),
     quantity: v.number(), // + or -
     reason: v.string(),
     type: v.string(), // "Adjustment", "Damage", "Manual Correction"
+    userId: v.string(),
   },
   handler: async (ctx, args) => {
     const product = await ctx.db.get(args.productId);
@@ -182,6 +186,7 @@ export const adjustStock = mutation({
       previousStock,
       newStock,
       reason: args.reason,
+      userId: args.userId,
       createdAt: Date.now(),
     });
 

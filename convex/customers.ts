@@ -30,7 +30,7 @@ export const upsert = mutation({
     const { id, ...data } = args;
     let customerId;
     if (id) {
-      await ctx.db.patch(id, data);
+      await ctx.db.patch(id, { ...data, updatedAt: Date.now() });
       customerId = id;
     } else {
       customerId = await ctx.db.insert("customers", {
@@ -43,6 +43,8 @@ export const upsert = mutation({
         customerHealth: "At Risk",
         totalSpent: 0,
         orderCount: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
 
       // Increment global counter

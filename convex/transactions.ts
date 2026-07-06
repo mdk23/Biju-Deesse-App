@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { reconcileBalances } from "./ledgerHelpers";
-import { validateCaixaForCash, recordCaixaCash } from "./caixaHelpers";
+import { validateCaixaForCash, recordCaixaCash, getActiveCaixaSession, resolveCaixaSession } from "./caixaHelpers";
 import { updateDailyMovementStats } from "./utils";
 
 async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: number, diffDebt?: number, diffOverdue?: number, diffOverdueAccounts?: number, recoveredDebt?: number, creditUsed?: number }) {
@@ -53,21 +53,21 @@ async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: numb
 export const list = query({
   handler: async (ctx) => {
     const transactions = await ctx.db.query("transactions").order("desc").take(100);
-    
+
     return await Promise.all(transactions.map(async (tx) => {
       let customerName = tx.customerName;
       let customerTier = tx.customerTier;
-      
+
       // Fallback rule for older transactions
       if (!customerName && tx.customerId) {
         const customer = await ctx.db.get(tx.customerId);
         customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
         customerTier = customer?.financialTier || "Regular";
       }
-      
+
       const itemsWithDetails = await Promise.all((tx.items || []).map(async (item) => {
         if (item.name) return item; // Has denormalized data
-        
+
         const product = await ctx.db.get(item.productId);
         return {
           ...item,
@@ -79,7 +79,7 @@ export const list = query({
       // Calculate total paid from breakdown
       const totalPaid = tx.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
       const balance = Math.max(0, tx.total - totalPaid);
-      
+
       return {
         ...tx,
         items: itemsWithDetails,
@@ -98,21 +98,21 @@ export const getRecent = query({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
     const transactions = await ctx.db.query("transactions").order("desc").take(args.limit);
-    
+
     return await Promise.all(transactions.map(async (tx) => {
       let customerName = tx.customerName;
       let customerTier = tx.customerTier;
-      
+
       // Fallback rule for older transactions
       if (!customerName && tx.customerId) {
         const customer = await ctx.db.get(tx.customerId);
         customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
         customerTier = customer?.financialTier || "Regular";
       }
-      
+
       const itemsWithDetails = await Promise.all((tx.items || []).map(async (item) => {
         if (item.name) return item; // Has denormalized data
-        
+
         const product = await ctx.db.get(item.productId);
         return {
           ...item,
@@ -124,7 +124,7 @@ export const getRecent = query({
       // Calculate total paid from breakdown
       const totalPaid = tx.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
       const balance = Math.max(0, tx.total - totalPaid);
-      
+
       return {
         ...tx,
         items: itemsWithDetails,
@@ -171,6 +171,8 @@ export const create = mutation({
     const now = Date.now();
     const todayStr = new Date(now).toISOString().split("T")[0];
 
+    const session = await resolveCaixaSession(ctx.db, now);
+
     let sequenceNumber = 1;
     const existingStat = await ctx.db
       .query("dailyStats")
@@ -185,12 +187,12 @@ export const create = mutation({
     // 0. Caixa validation for cash payments
     const cashPayment = args.paymentBreakdown.find(p => p.method.toLowerCase() === "cash");
     if (cashPayment && cashPayment.amount > 0) {
-      await validateCaixaForCash(ctx.db);
+      await validateCaixaForCash(ctx.db, now);
     }
 
     // 1. Determine Status & Validate Settlement
     const totalPayments = args.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-    
+
     // Validate split payments match amountReceived
     if (Math.abs(totalPayments - args.amountReceived) > 0.01) {
       throw new Error(`Split payments total (${totalPayments}) does not match amount received (${args.amountReceived}).`);
@@ -211,7 +213,7 @@ export const create = mutation({
     if (!args.customerId && isUnderpayment) {
       throw new Error("Walk-in transactions must be fully settled at checkout. No credit/debit allowed.");
     }
-    
+
     if (isOverpayment && !args.changeHandling) {
       throw new Error("Change handling method is required for overpayments.");
     }
@@ -222,7 +224,7 @@ export const create = mutation({
     let newDebitBalance = 0;
     let customerName = "Walk-in";
     let customerTier = "Regular";
-    
+
     let isNewCustomer = 0;
     let isReturningCustomer = 0;
     let creditIssuedToday = 0;
@@ -233,7 +235,7 @@ export const create = mutation({
     if (args.customerId) {
       customer = await ctx.db.get(args.customerId);
       if (!customer) throw new Error("Customer not found");
-      
+
       customerName = `${customer.firstName} ${customer.lastName}`;
       customerTier = customer.financialTier || "Regular";
       newCreditBalance = customer.creditBalance || 0;
@@ -271,7 +273,7 @@ export const create = mutation({
       const diffCredit = newCreditBalance - oldCredit;
       const diffDebt = newDebitBalance - oldDebt;
       const recoveredDebt = oldDebt > newDebitBalance ? oldDebt - newDebitBalance : 0;
-      
+
       if ((customer.orderCount || 0) === 0) {
         isNewCustomer = 1;
       } else {
@@ -328,11 +330,15 @@ export const create = mutation({
       notes: args.notes,
       customerName,
       customerTier,
+      sessionId: session._id,
+      createdAt: now,
+      updatedAt: now,
     });
 
     // 4. Ledger: SALE
     await ctx.db.insert("ledger", {
       customerId: args.customerId,
+      sessionId: session._id,
       type: "SALE",
       amount: args.total,
       balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
@@ -346,14 +352,18 @@ export const create = mutation({
       const paymentId = await ctx.db.insert("payments", {
         transactionId,
         customerId: args.customerId,
+        sessionId: session._id,
         amount: pay.amount,
         paymentMethod: pay.method,
         paymentDate: now,
         status: "Completed",
+        createdAt: now,
+        updatedAt: now,
       });
 
       await ctx.db.insert("ledger", {
         customerId: args.customerId,
+        sessionId: session._id,
         type: "PAYMENT",
         amount: pay.amount,
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
@@ -376,6 +386,7 @@ export const create = mutation({
         "SALE",
         `Cash sale for ${finalReceiptNumber}`,
         args.cashierName,
+        now,
         transactionId
       );
     }
@@ -385,6 +396,7 @@ export const create = mutation({
       const changeType = args.changeHandling === "Store Credit" ? "CREDIT" : "REFUND";
       await ctx.db.insert("ledger", {
         customerId: args.customerId,
+        sessionId: session._id,
         type: changeType,
         amount: change,
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
@@ -395,6 +407,7 @@ export const create = mutation({
     } else if (isUnderpayment) {
       await ctx.db.insert("ledger", {
         customerId: args.customerId,
+        sessionId: session._id,
         type: "DEBIT",
         amount: Math.abs(change),
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
@@ -423,6 +436,7 @@ export const create = mutation({
         previousStock,
         newStock,
         reason: `Sale ${finalReceiptNumber}`,
+        userId: args.cashierName,
         createdAt: now,
       });
     }
@@ -478,7 +492,7 @@ export const create = mutation({
       const isCompleted = status === "Completed";
       const isPartiallyPaid = status === "Partially Paid";
       const cashSales = paymentsByMethod["Cash"] || 0;
-      
+
       await ctx.db.patch(dailyStat._id, {
         totalRevenue: dailyStat.totalRevenue + args.total,
         totalProfit: dailyStat.totalProfit + args.profit,
@@ -581,7 +595,7 @@ export const create = mutation({
       .query("cashierCounters")
       .withIndex("by_userId", (q) => q.eq("userId", args.cashierName))
       .first();
-    
+
     if (cashierCounter) {
       const newCount = cashierCounter.salesCount + 1;
       const newRev = cashierCounter.totalRevenue + args.total;
@@ -608,7 +622,7 @@ export const create = mutation({
     for (const item of args.items) {
       const product = await ctx.db.get(item.productId);
       if (!product) continue;
-      
+
       const itemRev = item.quantity * item.price;
       const itemProfit = itemRev - (item.quantity * (product.costPrice || 0));
 
@@ -616,7 +630,7 @@ export const create = mutation({
         .query("productCounters")
         .withIndex("by_productId", (q) => q.eq("productId", item.productId))
         .first();
-      
+
       if (pCounter) {
         await ctx.db.patch(pCounter._id, {
           totalSold: pCounter.totalSold + item.quantity,
@@ -667,7 +681,7 @@ export const remove = mutation({
       if (product) {
         const previousStock = product.stock;
         const newStock = previousStock + item.quantity;
-        
+
         await ctx.db.patch(item.productId, { stock: newStock });
 
         // Log restoration movement
@@ -680,7 +694,7 @@ export const remove = mutation({
           reason: `Transaction ${transaction.receiptNumber} Deleted`,
           createdAt: Date.now(),
         });
-        
+
         await updateDailyMovementStats(ctx, "Return", item.quantity);
       }
     }
@@ -690,7 +704,7 @@ export const remove = mutation({
       .query("payments")
       .withIndex("by_transaction", (q) => q.eq("transactionId", args.id))
       .collect();
-    
+
     const paymentIds = payments.map(p => p._id);
     for (const payment of payments) {
       await ctx.db.delete(payment._id);
@@ -705,7 +719,7 @@ export const remove = mutation({
 
         const amountReceived = transaction.amountReceived || 0;
         const change = amountReceived - transaction.total;
-        
+
         let applyAsDebt = 0;
         let applyAsCredit = 0;
 
@@ -763,6 +777,7 @@ export const remove = mutation({
         "SALE_REVERSAL",
         `Reversal of cash sale for ${transaction.receiptNumber}`,
         transaction.cashierName || "System Admin",
+        Date.now(),
         transaction._id
       );
     }
@@ -868,7 +883,7 @@ export const remove = mutation({
       .query("cashierCounters")
       .withIndex("by_userId", (q) => q.eq("userId", transaction.cashierName))
       .first();
-    
+
     if (cashierCounter) {
       const newCount = Math.max(0, cashierCounter.salesCount - 1);
       const newRev = Math.max(0, cashierCounter.totalRevenue - transaction.total);
@@ -886,12 +901,12 @@ export const remove = mutation({
         .query("productCounters")
         .withIndex("by_productId", (q) => q.eq("productId", item.productId))
         .first();
-      
+
       if (pCounter) {
         const itemRev = item.quantity * item.price;
         const product = await ctx.db.get(item.productId);
         const itemProfit = itemRev - (item.quantity * (product?.costPrice || 0));
-        
+
         await ctx.db.patch(pCounter._id, {
           totalSold: Math.max(0, pCounter.totalSold - item.quantity),
           totalRevenue: Math.max(0, pCounter.totalRevenue - itemRev),

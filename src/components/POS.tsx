@@ -20,9 +20,11 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
+import { useAuth } from "./AuthProvider";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function POS() {
+  const { user } = useAuth();
   const products = useQuery(api.products.list, { archived: false }) || [];
   const customers = useQuery(api.customers.list) || [];
   const activeSession = useQuery(api.caixa.getActiveSession);
@@ -231,7 +233,7 @@ export default function POS() {
         taxes: 0,
         total: saleTotals.total,
         profit: saleTotals.profit,
-        cashierName: "Biju Cashier",
+        cashierName: user?.username || "Biju Cashier",
         amountReceived: effectiveSettlement === "Pending" ? 0 : amountReceived,
         changeGiven,
         changeHandling: changeGiven > 0 ? changeHandling : undefined,

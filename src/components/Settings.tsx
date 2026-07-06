@@ -238,7 +238,6 @@ function UserManagementSection() {
         clerkId: clerkRes.clerkId,
         username: username,
         role: role,
-        name: "",
       });
       toast.success(`User ${username} created!`);
       setUsername("");

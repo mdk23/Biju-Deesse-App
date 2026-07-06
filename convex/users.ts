@@ -13,7 +13,6 @@ export const seed = mutation({
       await ctx.db.insert("users", {
         username: "mdk",
         role: "admin",
-        name: "MDK Admin",
       });
       return "User mdk created successfully";
     }
@@ -35,7 +34,6 @@ export const getUserByClerkId = query({
       _id: user._id,
       username: user.username,
       role: user.role,
-      name: user.name,
       clerkId: user.clerkId,
       blocked: user.blocked,
     };
@@ -68,7 +66,6 @@ export const storeClerkUser = mutation({
     clerkId: v.string(),
     username: v.string(),
     role: v.string(),
-    name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -104,7 +101,6 @@ export const storeClerkUser = mutation({
       clerkId: args.clerkId,
       username: args.username,
       role: args.role,
-      name: args.name,
     });
 
     return newUserId;
@@ -119,7 +115,6 @@ export const listUsers = query({
       _id: user._id,
       username: user.username,
       role: user.role,
-      name: user.name,
       clerkId: user.clerkId,
       blocked: user.blocked,
     }));
@@ -194,5 +189,21 @@ export const resetPassword = mutation({
   args: { userId: v.id("users"), newPassword: v.string() },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.userId, { passwordHash: args.newPassword });
+  },
+});
+
+export const removeNameFromUsers = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query("users").collect();
+    let count = 0;
+    for (const user of users) {
+      if ('name' in user) {
+        // Explicitly cast to any to bypass TypeScript typing and delete the field
+        await ctx.db.patch(user._id, { name: undefined } as any);
+        count++;
+      }
+    }
+    return `Removed name from ${count} users`;
   },
 });
