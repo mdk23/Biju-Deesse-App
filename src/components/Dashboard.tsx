@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   ShoppingBag,
@@ -70,13 +70,8 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<'today' | 'yesterday' | 'this_week'>('today');
   const brief = useQuery(api.analytics.getExecutiveBrief, { period });
   const revenueHistory = useQuery(api.analytics.getRevenueByPeriod, { period: 'weekly' });
-  const recentTransactions = useQuery(api.transactions.getRecent, { limit: 10 });
-  const lowStock = useQuery(api.products.getLowStock);
-
-  const filteredRecentTransactions = (recentTransactions || []).filter(tx => {
-    const txTime = tx._creationTime;
+  const queryParams = useMemo(() => {
     const now = new Date();
-
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const todayTimestamp = startOfToday.getTime();
@@ -94,16 +89,21 @@ export default function Dashboard() {
     const thisWeekTimestamp = startOfThisWeek.getTime();
 
     if (period === 'today') {
-      return txTime >= todayTimestamp;
+      return { startDate: todayTimestamp };
     }
     if (period === 'yesterday') {
-      return txTime >= yesterdayTimestamp && txTime < todayTimestamp;
+      return { startDate: yesterdayTimestamp, endDate: todayTimestamp - 1 };
     }
     if (period === 'this_week') {
-      return txTime >= thisWeekTimestamp;
+      return { startDate: thisWeekTimestamp };
     }
-    return true;
-  });
+    return {};
+  }, [period]);
+
+  const recentTransactions = useQuery(api.transactions.getRecent, { limit: 10, ...queryParams });
+  const lowStock = useQuery(api.products.getLowStock);
+
+  const filteredRecentTransactions = recentTransactions || [];
 
   // Formatting helpers
   const formatCurrency = (val: number) =>

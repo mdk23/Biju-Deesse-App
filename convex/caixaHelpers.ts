@@ -68,7 +68,8 @@ export async function recordCaixaCash(
   description: string,
   userId: string,
   timestamp: number,
-  referenceId?: string
+  referenceId?: string,
+  referenceType?: string
 ) {
   if (amount <= 0) return;
 
@@ -98,6 +99,7 @@ export async function recordCaixaCash(
     timestamp,
     runningBalance,
     referenceId,
+    referenceType,
   });
 
   await db.insert("auditLogs", {

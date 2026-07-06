@@ -69,6 +69,7 @@ export const addPayment = mutation({
       amount: args.amount,
       description: `Manual payment via ${args.paymentMethod}`,
       referenceId: paymentId,
+      referenceType: "payment",
       sessionId: session._id,
     });
 
@@ -80,7 +81,8 @@ export const addPayment = mutation({
         `Manual payment received for transaction ${args.transactionId}`,
         "System", // Ideally this would be the actual user, but we don't have it in args currently
         now,
-        paymentId
+        paymentId,
+        "payment"
       );
     }
 

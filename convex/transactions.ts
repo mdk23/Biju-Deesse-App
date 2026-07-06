@@ -95,9 +95,33 @@ export const list = query({
 });
 
 export const getRecent = query({
-  args: { limit: v.number() },
+  args: { 
+    limit: v.number(),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    const transactions = await ctx.db.query("transactions").order("desc").take(args.limit);
+    let q;
+    if (args.startDate !== undefined && args.endDate !== undefined) {
+      q = ctx.db.query("transactions")
+        .withIndex("by_createdAt", (qIndex) =>
+          qIndex.gte("createdAt", args.startDate!).lte("createdAt", args.endDate!)
+        );
+    } else if (args.startDate !== undefined) {
+      q = ctx.db.query("transactions")
+        .withIndex("by_createdAt", (qIndex) =>
+          qIndex.gte("createdAt", args.startDate!)
+        );
+    } else if (args.endDate !== undefined) {
+      q = ctx.db.query("transactions")
+        .withIndex("by_createdAt", (qIndex) =>
+          qIndex.lte("createdAt", args.endDate!)
+        );
+    } else {
+      q = ctx.db.query("transactions");
+    }
+
+    const transactions = await q.order("desc").take(args.limit);
 
     return await Promise.all(transactions.map(async (tx) => {
       let customerName = tx.customerName;
@@ -343,6 +367,7 @@ export const create = mutation({
       amount: args.total,
       balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
       referenceId: transactionId,
+      referenceType: "transaction",
       description: `Sale ${finalReceiptNumber}`,
       createdAt: now,
     });
@@ -368,6 +393,7 @@ export const create = mutation({
         amount: pay.amount,
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
         referenceId: paymentId,
+        referenceType: "payment",
         description: `Payment via ${pay.method} for ${finalReceiptNumber}`,
         createdAt: now,
       });
@@ -387,7 +413,8 @@ export const create = mutation({
         `Cash sale for ${finalReceiptNumber}`,
         args.cashierName,
         now,
-        transactionId
+        transactionId,
+        "transaction"
       );
     }
 
@@ -401,6 +428,7 @@ export const create = mutation({
         amount: change,
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
         referenceId: transactionId,
+        referenceType: "transaction",
         description: `${changeType === "CREDIT" ? "Store Credit" : "Change Refund"} for ${finalReceiptNumber}`,
         createdAt: now,
       });
@@ -412,6 +440,7 @@ export const create = mutation({
         amount: Math.abs(change),
         balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
         referenceId: transactionId,
+        referenceType: "transaction",
         description: `Outstanding balance for ${finalReceiptNumber}`,
         createdAt: now,
       });
@@ -778,7 +807,8 @@ export const remove = mutation({
         `Reversal of cash sale for ${transaction.receiptNumber}`,
         transaction.cashierName || "System Admin",
         Date.now(),
-        transaction._id
+        transaction._id,
+        "transaction"
       );
     }
 

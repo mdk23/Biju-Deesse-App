@@ -132,12 +132,14 @@ export default defineSchema({
       debit: v.number(),
     }),
     referenceId: v.optional(v.string()), // Transaction or Payment ID
+    referenceType: v.optional(v.string()), // "transaction" | "payment" | "caixaMovement"
     description: v.string(),
     createdAt: v.number(), // Timestamp
     updatedAt: v.optional(v.number()),
   }).index("by_customer", ["customerId"])
     .index("by_type", ["type"])
-    .index("by_session", ["sessionId"]),
+    .index("by_session", ["sessionId"])
+    .index("by_reference", ["referenceType", "referenceId"]),
 
   caixaSessions: defineTable({
     openedBy: v.string(), // User ID or Name
@@ -163,6 +165,7 @@ export default defineSchema({
     type: v.string(), // "OPENING", "SALE", "CASH_IN", "CASH_OUT", "SALE_REVERSAL", "CLOSING", "ADJUSTMENT"
     amount: v.number(),
     referenceId: v.optional(v.string()), // orderId, paymentId, etc.
+    referenceType: v.optional(v.string()), // "transaction" | "payment" | "session"
     description: v.string(),
     userId: v.string(),
     timestamp: v.number(),
@@ -172,7 +175,8 @@ export default defineSchema({
   }).index("by_session", ["sessionId"])
     .index("by_timestamp", ["timestamp"])
     .index("by_type", ["type"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    .index("by_reference", ["referenceType", "referenceId"]),
 
   auditLogs: defineTable({
     userId: v.string(),

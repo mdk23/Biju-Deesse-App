@@ -156,6 +156,7 @@ export const addMovement = mutation({
     description: v.string(),
     userId: v.string(),
     referenceId: v.optional(v.string()),
+    referenceType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
@@ -211,6 +212,7 @@ export const addMovement = mutation({
       timestamp: Date.now(),
       runningBalance,
       referenceId: args.referenceId,
+      referenceType: args.referenceType,
     });
 
     await ctx.db.insert("auditLogs", {

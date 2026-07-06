@@ -43,6 +43,7 @@ export async function applyCustomerLedger(
     amount: number;
     description: string;
     referenceId?: string;
+    referenceType?: string;
     sessionId?: Id<"caixaSessions">;
   }
 ) {
@@ -87,6 +88,7 @@ export async function applyCustomerLedger(
     amount: params.amount,
     balanceAfter: { credit: creditBalance, debit: debitBalance },
     referenceId: params.referenceId,
+    referenceType: params.referenceType,
     description: params.description,
     createdAt: now,
   });
