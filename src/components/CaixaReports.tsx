@@ -45,7 +45,6 @@ export default function CaixaReports() {
       ["FECHO DO DIA - RELATÓRIO DE CAIXA"],
       [],
       ["INFORMAÇÃO DA SESSÃO"],
-      ["ID da Sessão", sess._id],
       ["Operador", sess.openedBy],
       ["Estado", sess.status],
       ["Data/Hora Abertura", formatFullDate(sess.openedAt)],
@@ -56,7 +55,7 @@ export default function CaixaReports() {
     // Section 2: Financial Balances
     const financialBalances: any[][] = [
       [],
-      ["RESUMO FINANCEIRO DO CAIXA"],
+      ["RESUMO  DO CAIXA"],
       ["Fundo de Caixa (Abertura)", s.openingAmount],
       ["Dinheiro Recebido em Vendas", s.totalCashReceived],
       ["Entradas de Caixa (Cash In)", s.totalCashIn],
@@ -71,6 +70,7 @@ export default function CaixaReports() {
       [],
       ["RECEITA E RENDIMENTOS DA SESSÃO"],
       ["Receita Total da Sessão (Todos os Meios)", s.totalSessionRevenue],
+      ["Custo Total dos Artigos Vendidos", s.totalCost],
       ["Lucro Total Estimado", s.totalProfit],
       ["Total de Descontos Concedidos", s.totalDiscounts],
       ["Total Saldo Pendente (Contas a Receber)", s.totalPendingBalance],
@@ -87,7 +87,7 @@ export default function CaixaReports() {
     // Section 5: Client Credit & Debt
     const clientCreditDebt: any[][] = [
       [],
-      ["FLUXO DE CRÉDITO E DÍVIDA DE CLIENTES"],
+      ["FLUXO DE CRÉDITO E DÍVIDA"],
       ["Crédito de Cliente Emitido", s.totalCustomerCreditIssued],
       ["Crédito de Cliente Utilizado", s.totalCustomerCreditUsed],
       ["Dívida de Cliente Criada", s.totalCustomerDebtCreated],

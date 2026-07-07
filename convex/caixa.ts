@@ -329,7 +329,7 @@ export const getSessionReportDetails = query({
       }
     }
 
-    const debtRecoveries = ledgerEntries.filter((l) => l.type === "PAYMENT");
+    const debtRecoveries = ledgerEntries.filter((l) => l.type === "PAYMENT" && l.description.startsWith("Manual payment"));
     const totalDebtRecoveries = debtRecoveries.reduce((sum, l) => sum + l.amount, 0);
 
     const creditRedemptions = ledgerEntries.filter((l) => l.type === "USE_CREDIT");
@@ -344,6 +344,8 @@ export const getSessionReportDetails = query({
     // Compute additional overview metrics requested by the user
     const totalSessionRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
     const totalProfit = transactions.reduce((sum, t) => sum + (t.profit ?? 0), 0);
+    const totalSalesVolume = transactions.reduce((sum, t) => sum + t.total, 0);
+    const totalCost = totalSalesVolume - totalProfit;
     const totalTransactions = transactions.length;
     const totalItemsSold = transactions.reduce(
       (sum, t) => sum + t.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
@@ -364,7 +366,7 @@ export const getSessionReportDetails = query({
       .filter((l) => l.type === "DEBIT")
       .reduce((sum, l) => sum + l.amount, 0);
     const totalCustomerDebtRecovered = ledgerEntries
-      .filter((l) => l.type === "PAYMENT")
+      .filter((l) => l.type === "PAYMENT" && l.description.startsWith("Manual payment"))
       .reduce((sum, l) => sum + l.amount, 0);
 
     return {
@@ -386,6 +388,7 @@ export const getSessionReportDetails = query({
         totalDebtRecoveries,
         totalCreditRedemptions,
         totalSessionRevenue,
+        totalCost,
         totalProfit,
         totalTransactions,
         totalItemsSold,
