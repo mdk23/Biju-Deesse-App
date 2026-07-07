@@ -120,7 +120,8 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
   }).index("by_product", ["productId"])
     .index("by_type", ["movementType"])
-    .index("by_userId", ["userId"]),
+    .index("by_userId", ["userId"])
+    .index("by_createdAt", ["createdAt"]),
 
   ledger: defineTable({
     customerId: v.optional(v.id("customers")),

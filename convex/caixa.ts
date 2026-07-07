@@ -298,6 +298,26 @@ export const getSessionReportDetails = query({
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .collect();
 
+    // Fetch and resolve stock movements for the session time range
+    const start = session.openedAt;
+    const end = session.closedAt ?? Date.now();
+
+    const stockMovements = await ctx.db
+      .query("inventoryMovements")
+      .withIndex("by_createdAt", (q) => q.gte("createdAt", start).lte("createdAt", end))
+      .collect();
+
+    const stockMovementsResolved = await Promise.all(
+      stockMovements.map(async (m) => {
+        const product = await ctx.db.get(m.productId);
+        return {
+          ...m,
+          productName: product?.name || "Unknown Product",
+          productCode: product?.code || "N/A",
+        };
+      })
+    );
+
     let totalCashReceived = 0;
     let totalElectronicReceived = 0;
 
@@ -321,12 +341,39 @@ export const getSessionReportDetails = query({
     const cashOutMovements = movements.filter((m) => m.type === "CASH_OUT");
     const totalCashOut = cashOutMovements.reduce((sum, m) => sum + m.amount, 0);
 
+    // Compute additional overview metrics requested by the user
+    const totalSessionRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+    const totalProfit = transactions.reduce((sum, t) => sum + (t.profit ?? 0), 0);
+    const totalTransactions = transactions.length;
+    const totalItemsSold = transactions.reduce(
+      (sum, t) => sum + t.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+      0
+    );
+    const totalDiscounts = transactions.reduce((sum, t) => sum + (t.discount ?? 0), 0);
+    const totalPendingBalance = transactions.reduce(
+      (sum, t) => sum + Math.max(0, t.total - (t.amountReceived ?? t.total)),
+      0
+    );
+    const totalCustomerCreditIssued = ledgerEntries
+      .filter((l) => l.type === "CREDIT")
+      .reduce((sum, l) => sum + l.amount, 0);
+    const totalCustomerCreditUsed = ledgerEntries
+      .filter((l) => l.type === "USE_CREDIT")
+      .reduce((sum, l) => sum + l.amount, 0);
+    const totalCustomerDebtCreated = ledgerEntries
+      .filter((l) => l.type === "DEBIT")
+      .reduce((sum, l) => sum + l.amount, 0);
+    const totalCustomerDebtRecovered = ledgerEntries
+      .filter((l) => l.type === "PAYMENT")
+      .reduce((sum, l) => sum + l.amount, 0);
+
     return {
       session,
       transactions,
       payments,
       ledgerEntries,
       movements,
+      stockMovements: stockMovementsResolved,
       summary: {
         openingAmount: session.openingAmount,
         closingAmount: session.countedCash ?? null,
@@ -338,7 +385,17 @@ export const getSessionReportDetails = query({
         totalCashOut,
         totalDebtRecoveries,
         totalCreditRedemptions,
-      }
+        totalSessionRevenue,
+        totalProfit,
+        totalTransactions,
+        totalItemsSold,
+        totalDiscounts,
+        totalPendingBalance,
+        totalCustomerCreditIssued,
+        totalCustomerCreditUsed,
+        totalCustomerDebtCreated,
+        totalCustomerDebtRecovered,
+      },
     };
-  }
+  },
 });

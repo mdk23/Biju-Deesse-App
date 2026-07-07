@@ -9,6 +9,7 @@ import {
   Download, Calendar, BarChart, TrendingUp, AlertCircle, Search,
   X, Lock, Unlock, ArrowDownLeft, ArrowUpRight, Wallet, Clock, User
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' })
@@ -31,6 +32,185 @@ export default function CaixaReports() {
   );
 
   const selectedSessionMovements = sessionDetails?.movements || [];
+
+  const handleExportExcel = () => {
+    if (!sessionDetails) return;
+
+    const { session: sess, transactions: txs, payments: pmts, ledgerEntries: ledger, stockMovements: stocks, summary: s } = sessionDetails;
+
+    const formatFullDate = (ts: number) => new Date(ts).toLocaleString('pt-PT');
+
+    // Section 1: Session Metadata
+    const metadata: any[][] = [
+      ["FECHO DO DIA - RELATÓRIO DE CAIXA"],
+      [],
+      ["INFORMAÇÃO DA SESSÃO"],
+      ["ID da Sessão", sess._id],
+      ["Operador", sess.openedBy],
+      ["Estado", sess.status],
+      ["Data/Hora Abertura", formatFullDate(sess.openedAt)],
+      ["Data/Hora Fecho", sess.closedAt ? formatFullDate(sess.closedAt) : "Sessão Activa (Aberto)"],
+      ["Nota de Fecho", sess.closingNote || "Nenhum"],
+    ];
+
+    // Section 2: Financial Balances
+    const financialBalances: any[][] = [
+      [],
+      ["RESUMO FINANCEIRO DO CAIXA"],
+      ["Fundo de Caixa (Abertura)", s.openingAmount],
+      ["Dinheiro Recebido em Vendas", s.totalCashReceived],
+      ["Entradas de Caixa (Cash In)", s.totalCashIn],
+      ["Saídas de Caixa (Cash Out)", s.totalCashOut],
+      ["Saldo de Caixa Esperado", s.expectedCash],
+      ["Dinheiro Contado no Fecho", sess.countedCash !== undefined ? sess.countedCash : "N/A"],
+      ["Diferença (Desvio/Variance)", sess.variance !== undefined ? sess.variance : "N/A"],
+    ];
+
+    // Section 3: Revenue & Profits
+    const revenueProfit: any[][] = [
+      [],
+      ["RECEITA E RENDIMENTOS DA SESSÃO"],
+      ["Receita Total da Sessão (Todos os Meios)", s.totalSessionRevenue],
+      ["Lucro Total Estimado", s.totalProfit],
+      ["Total de Descontos Concedidos", s.totalDiscounts],
+      ["Total Saldo Pendente (Contas a Receber)", s.totalPendingBalance],
+    ];
+
+    // Section 4: Commercial Activity
+    const commercialActivity: any[][] = [
+      [],
+      ["ACTIVIDADE COMERCIAL"],
+      ["Total de Transacções", s.totalTransactions],
+      ["Total de Artigos Vendidos", s.totalItemsSold],
+    ];
+
+    // Section 5: Client Credit & Debt
+    const clientCreditDebt: any[][] = [
+      [],
+      ["FLUXO DE CRÉDITO E DÍVIDA DE CLIENTES"],
+      ["Crédito de Cliente Emitido", s.totalCustomerCreditIssued],
+      ["Crédito de Cliente Utilizado", s.totalCustomerCreditUsed],
+      ["Dívida de Cliente Criada", s.totalCustomerDebtCreated],
+      ["Dívida de Cliente Recuperada (Pagamentos)", s.totalCustomerDebtRecovered],
+    ];
+
+    // Section 6: Payment Method Breakdown
+    const paymentBreakdownMap: Record<string, number> = {};
+    pmts.forEach((p: any) => {
+      const method = p.paymentMethod || "Desconhecido";
+      paymentBreakdownMap[method] = (paymentBreakdownMap[method] || 0) + p.amount;
+    });
+
+    const paymentBreakdownRows: any[][] = [
+      [],
+      ["DESDOBRAMENTO DE PAGAMENTOS (POR MÉTODO)"],
+      ["Método de Pagamento", "Total Recebido"]
+    ];
+
+    Object.entries(paymentBreakdownMap).forEach(([method, amount]) => {
+      paymentBreakdownRows.push([method, amount]);
+    });
+
+    // Combine into AOA (Array of Arrays) for Sheet 1
+    const sheet1Data: any[][] = [
+      ...metadata,
+      ...financialBalances,
+      ...revenueProfit,
+      ...commercialActivity,
+      ...clientCreditDebt,
+      ...paymentBreakdownRows
+    ];
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Resumo
+    const wsSummary = XLSX.utils.aoa_to_sheet(sheet1Data);
+    wsSummary['!cols'] = [
+      { wch: 45 }, // Column A (Descriptions)
+      { wch: 30 }, // Column B (Values)
+    ];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo");
+
+    // Sheet 2: Itens Vendidos
+    const sheet2Data: any[][] = [
+      ["Recibo", "Data/Hora", "Produto", "Quantidade", "Preço Unitário", "Total do Item", "Desconto do Recibo", "Pago?", "Método de Pagamento"]
+    ];
+
+    txs.forEach((t: any) => {
+      const receipt = t.receiptNumber || t._id;
+      const dateStr = formatFullDate(t.createdAt);
+      const isPaid = t.status === "Completed" ? "Sim" : t.status === "Partially Paid" ? "Parcial" : "Não";
+      const paymentMethods = t.paymentBreakdown && t.paymentBreakdown.length > 0
+        ? t.paymentBreakdown.map((p: any) => p.method).join(", ")
+        : "N/A";
+
+      t.items.forEach((item: any) => {
+        const itemTotal = item.quantity * item.price;
+        sheet2Data.push([
+          receipt,
+          dateStr,
+          item.name || "N/A",
+          item.quantity,
+          item.price,
+          itemTotal,
+          t.discount || 0,
+          isPaid,
+          paymentMethods
+        ]);
+      });
+    });
+
+    const wsItems = XLSX.utils.aoa_to_sheet(sheet2Data);
+    wsItems['!cols'] = [
+      { wch: 18 }, // Recibo
+      { wch: 22 }, // Data/Hora
+      { wch: 35 }, // Produto
+      { wch: 12 }, // Quantidade
+      { wch: 15 }, // Preço Unitário
+      { wch: 15 }, // Total do Item
+      { wch: 18 }, // Desconto do Recibo
+      { wch: 10 }, // Pago?
+      { wch: 20 }, // Método de Pagamento
+    ];
+    XLSX.utils.book_append_sheet(wb, wsItems, "Itens Vendidos");
+
+    // Sheet 3: Movimentos de Stock
+    const sheet3Data: any[][] = [
+      ["Produto", "Código/SKU", "Tipo de Movimento", "Quantidade", "Stock Anterior", "Novo Stock", "Data/Hora", "Motivo/Descrição", "Operador"]
+    ];
+
+    stocks.forEach((m: any) => {
+      sheet3Data.push([
+        m.productName,
+        m.productCode,
+        m.movementType,
+        m.quantity,
+        m.previousStock,
+        m.newStock,
+        formatFullDate(m.createdAt),
+        m.reason,
+        m.userId || "Sistema"
+      ]);
+    });
+
+    const wsStock = XLSX.utils.aoa_to_sheet(sheet3Data);
+    wsStock['!cols'] = [
+      { wch: 30 }, // Produto
+      { wch: 15 }, // Código/SKU
+      { wch: 18 }, // Tipo de Movimento
+      { wch: 12 }, // Quantidade
+      { wch: 15 }, // Stock Anterior
+      { wch: 15 }, // Novo Stock
+      { wch: 22 }, // Data/Hora
+      { wch: 35 }, // Motivo/Descrição
+      { wch: 15 }, // Operador
+    ];
+    XLSX.utils.book_append_sheet(wb, wsStock, "Movimentos de Stock");
+
+    // Export Workbook
+    const dateFileStr = new Date(sess.openedAt).toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Fecho_do_Dia_${sess.openedBy}_${dateFileStr}.xlsx`);
+  };
 
   const filterParams = useMemo(() => {
     const now = new Date();
@@ -220,12 +400,22 @@ export default function CaixaReports() {
                     <User size={12} /> Opened by: <span className="font-bold text-primary">{selectedSession.openedBy}</span>
                   </p>
                 </div>
-                <button
-                  onClick={() => setSelectedSession(null)}
-                  className="p-2 hover:bg-primary/5 rounded-full text-outline hover:text-primary transition-colors"
-                >
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-4">
+                  {sessionDetails && (
+                    <button
+                      onClick={handleExportExcel}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-label-caps text-[10px] shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 font-bold"
+                    >
+                      <Download size={12} /> Exportar Excel
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedSession(null)}
+                    className="p-2 hover:bg-primary/5 rounded-full text-outline hover:text-primary transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               {/* Drawer Content */}
