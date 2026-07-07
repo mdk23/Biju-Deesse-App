@@ -5,6 +5,7 @@ import { normalizePaymentMethod } from "./utils";
 import { reconcileBalances } from "./ledgerHelpers";
 import { validateCaixaForCash, recordCaixaCash, getActiveCaixaSession, resolveCaixaSession } from "./caixaHelpers";
 import { updateDailyMovementStats } from "./utils";
+import { requireUser } from "./authHelpers";
 
 async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: number, diffDebt?: number, diffOverdue?: number, diffOverdueAccounts?: number, recoveredDebt?: number, creditUsed?: number }) {
   const now = new Date();
@@ -177,7 +178,7 @@ export const create = mutation({
     taxes: v.number(),
     total: v.number(),
     profit: v.number(),
-    cashierName: v.string(),
+    cashierName: v.optional(v.string()),
     receiptNumber: v.optional(v.string()),
     amountReceived: v.number(),
     changeGiven: v.number(),
@@ -192,6 +193,7 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
     const now = Date.now();
     const todayStr = new Date(now).toISOString().split("T")[0];
 
@@ -341,7 +343,7 @@ export const create = mutation({
       taxes: args.taxes,
       total: args.total,
       profit: args.profit,
-      cashierName: args.cashierName,
+      cashierName: user.username,
       status,
       settlementType: status === "Completed" ? "Fully Paid" : status,
       deliveryStatus: args.deliveryStatus,
@@ -359,13 +361,32 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    // 4. Ledger: SALE
+    // 4. Compute Step-by-Step Intermediate Balances for Ledger
+    let runningCredit = customer ? (customer.creditBalance || 0) : 0;
+    let runningDebit = customer ? (customer.debitBalance || 0) : 0;
+
+    // First adjust by store credit used (withdrawal from customer credit)
+    const storeCreditUsed = args.paymentBreakdown
+      .filter(p => p.method === "Store Credit")
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    if (customer && storeCreditUsed > 0) {
+      runningCredit = Math.max(0, runningCredit - storeCreditUsed);
+    }
+
+    // A. Ledger: SALE
+    if (args.customerId) {
+      const saleReconciled = reconcileBalances(runningCredit, runningDebit, -args.total);
+      runningCredit = saleReconciled.creditBalance;
+      runningDebit = saleReconciled.debitBalance;
+    }
+
     await ctx.db.insert("ledger", {
       customerId: args.customerId,
       sessionId: session._id,
       type: "SALE",
       amount: args.total,
-      balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+      balanceAfter: { credit: runningCredit, debit: runningDebit },
       referenceId: transactionId,
       referenceType: "transaction",
       description: `Sale ${finalReceiptNumber}`,
@@ -386,12 +407,18 @@ export const create = mutation({
         updatedAt: now,
       });
 
+      if (args.customerId) {
+        const payReconciled = reconcileBalances(runningCredit, runningDebit, pay.amount);
+        runningCredit = payReconciled.creditBalance;
+        runningDebit = payReconciled.debitBalance;
+      }
+
       await ctx.db.insert("ledger", {
         customerId: args.customerId,
         sessionId: session._id,
         type: "PAYMENT",
         amount: pay.amount,
-        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        balanceAfter: { credit: runningCredit, debit: runningDebit },
         referenceId: paymentId,
         referenceType: "payment",
         description: `Payment via ${pay.method} for ${finalReceiptNumber}`,
@@ -411,7 +438,7 @@ export const create = mutation({
         netCash,
         "SALE",
         `Cash sale for ${finalReceiptNumber}`,
-        args.cashierName,
+        user.username,
         now,
         transactionId,
         "transaction"
@@ -421,12 +448,19 @@ export const create = mutation({
     // 6. Ledger: Change Handling (REFUND or CREDIT) / Underpayment (DEBIT)
     if (isOverpayment) {
       const changeType = args.changeHandling === "Store Credit" ? "CREDIT" : "REFUND";
+      if (args.customerId) {
+        const changeDelta = args.changeHandling === "Store Credit" ? change : -change;
+        const changeReconciled = reconcileBalances(runningCredit, runningDebit, changeDelta);
+        runningCredit = changeReconciled.creditBalance;
+        runningDebit = changeReconciled.debitBalance;
+      }
+
       await ctx.db.insert("ledger", {
         customerId: args.customerId,
         sessionId: session._id,
         type: changeType,
         amount: change,
-        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        balanceAfter: { credit: runningCredit, debit: runningDebit },
         referenceId: transactionId,
         referenceType: "transaction",
         description: `${changeType === "CREDIT" ? "Store Credit" : "Change Refund"} for ${finalReceiptNumber}`,
@@ -438,7 +472,7 @@ export const create = mutation({
         sessionId: session._id,
         type: "DEBIT",
         amount: Math.abs(change),
-        balanceAfter: { credit: newCreditBalance, debit: newDebitBalance },
+        balanceAfter: { credit: runningCredit, debit: runningDebit },
         referenceId: transactionId,
         referenceType: "transaction",
         description: `Outstanding balance for ${finalReceiptNumber}`,
@@ -457,15 +491,15 @@ export const create = mutation({
       // Update Stock
       await ctx.db.patch(item.productId, { stock: newStock });
 
-      // Log Movement
+      // Write to inventory movements
       await ctx.db.insert("inventoryMovements", {
         productId: item.productId,
         movementType: "Sale",
         quantity: -item.quantity,
-        previousStock,
-        newStock,
-        reason: `Sale ${finalReceiptNumber}`,
-        userId: args.cashierName,
+        previousStock: product.stock,
+        newStock: newStock,
+        reason: `Sold in receipt ${finalReceiptNumber}`,
+        userId: user.username,
         createdAt: now,
       });
     }
@@ -622,7 +656,7 @@ export const create = mutation({
     // 9. Update Cashier Counters
     const cashierCounter = await ctx.db
       .query("cashierCounters")
-      .withIndex("by_userId", (q) => q.eq("userId", args.cashierName))
+      .withIndex("by_userId", (q) => q.eq("userId", user.username))
       .first();
 
     if (cashierCounter) {
@@ -637,7 +671,7 @@ export const create = mutation({
       });
     } else {
       await ctx.db.insert("cashierCounters", {
-        userId: args.cashierName,
+        userId: user.username,
         salesCount: 1,
         totalRevenue: args.total,
         totalProfit: args.profit,
@@ -701,6 +735,11 @@ export const getAnalytics = query({
 export const remove = mutation({
   args: { id: v.id("transactions") },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+    if (user.role !== "admin" && user.role !== "manager") {
+      throw new Error("Unauthorized. Only admins and managers can delete transactions.");
+    }
+
     const transaction = await ctx.db.get(args.id);
     if (!transaction) throw new Error("Transaction not found");
 
@@ -721,6 +760,7 @@ export const remove = mutation({
           previousStock,
           newStock,
           reason: `Transaction ${transaction.receiptNumber} Deleted`,
+          userId: user.username,
           createdAt: Date.now(),
         });
 
@@ -786,9 +826,6 @@ export const remove = mutation({
       }
     }
 
-    // 5. Delete Transaction
-    await ctx.db.delete(args.id);
-
     // 6. Caixa SALE_REVERSAL
     const cashPayment = transaction.paymentBreakdown.find((p: any) => p.method.toLowerCase() === "cash");
     if (cashPayment && cashPayment.amount > 0) {
@@ -805,12 +842,23 @@ export const remove = mutation({
         netCash,
         "SALE_REVERSAL",
         `Reversal of cash sale for ${transaction.receiptNumber}`,
-        transaction.cashierName || "System Admin",
+        user.username,
         Date.now(),
         transaction._id,
         "transaction"
       );
     }
+
+    // 5. Delete Transaction
+    await ctx.db.delete(args.id);
+
+    await ctx.db.insert("auditLogs", {
+      userId: user.username,
+      timestamp: Date.now(),
+      action: "DELETE_TRANSACTION",
+      beforeValue: { receiptNumber: transaction.receiptNumber, total: transaction.total },
+      referenceId: args.id,
+    });
 
     if (transaction.customerId) {
       await recomputeCustomerIntelligence(ctx.db, transaction.customerId);

@@ -9,6 +9,7 @@
  */
 
 import type * as analytics from "../analytics.js";
+import type * as authHelpers from "../authHelpers.js";
 import type * as caixa from "../caixa.js";
 import type * as caixaHelpers from "../caixaHelpers.js";
 import type * as cleanup from "../cleanup.js";
@@ -32,6 +33,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
+  authHelpers: typeof authHelpers;
   caixa: typeof caixa;
   caixaHelpers: typeof caixaHelpers;
   cleanup: typeof cleanup;

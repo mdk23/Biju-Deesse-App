@@ -169,17 +169,26 @@ export const getExecutiveBrief = query({
 export const getRevenueByPeriod = query({
   args: { period: v.string() }, // "weekly", "monthly"
   handler: async (ctx, args) => {
-    // Only fetch recent transactions using take to prevent full scan
-    const transactions = await ctx.db.query("transactions").order("desc").take(500);
+    const daysToTake = args.period === "monthly" ? 30 : 7;
+    const stats = await ctx.db
+      .query("dailyStats")
+      .order("desc")
+      .take(daysToTake);
+
+    // Convex returns stats in descending order. Reverse to chronological order (ascending).
+    const chronologicalStats = [...stats].reverse();
+
+    const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     
-    // Mocking a week of aggregate data for now since we don't have enough history
-    // In a real app, we'd group transactions by _creationTime
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days.map(day => ({
-      name: day,
-      revenue: Math.floor(Math.random() * 500000) + 300000,
-      orders: Math.floor(Math.random() * 20) + 5,
-    }));
+    return chronologicalStats.map((s) => {
+      const dateObj = new Date(s.date + "T00:00:00");
+      const dayName = weekdays[dateObj.getDay()];
+      return {
+        name: args.period === "monthly" ? s.date.slice(5) : dayName,
+        revenue: s.totalRevenue,
+        orders: s.transactionCount,
+      };
+    });
   },
 });
 

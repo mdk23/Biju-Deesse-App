@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { updateDailyMovementStats } from "./utils";
+import { requireUser } from "./authHelpers";
 
 async function updateInventoryCountersHelper(ctx: any, args: {
   diffProducts?: number,
@@ -68,6 +69,11 @@ export const upsert = mutation({
     imageUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+    if (user.role !== "admin" && user.role !== "manager") {
+      throw new Error("Unauthorized. Only admins and managers can create or edit products.");
+    }
+
     const { id, ...data } = args;
     let valueDiff = 0;
     let idToReturn = id;
@@ -92,6 +98,19 @@ export const upsert = mutation({
         const isOut = data.stock <= 0;
         if (!wasOut && isOut) diffOutOfStock = 1;
         if (wasOut && !isOut) diffOutOfStock = -1;
+
+        if (diffUnits !== 0) {
+          await ctx.db.insert("inventoryMovements", {
+            productId: id,
+            movementType: "Manual Correction",
+            quantity: diffUnits,
+            previousStock: existing.stock,
+            newStock: data.stock,
+            reason: "Catalog product details modified directly",
+            userId: user.username,
+            createdAt: Date.now(),
+          });
+        }
       }
       await ctx.db.patch(id, { ...data, updatedAt: Date.now() });
     } else {
@@ -105,6 +124,19 @@ export const upsert = mutation({
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+
+      if (data.stock !== 0) {
+        await ctx.db.insert("inventoryMovements", {
+          productId: idToReturn,
+          movementType: "Adjustment",
+          quantity: data.stock,
+          previousStock: 0,
+          newStock: data.stock,
+          reason: "Initial catalog creation",
+          userId: user.username,
+          createdAt: Date.now(),
+        });
+      }
     }
 
     if (valueDiff !== 0) {
@@ -134,6 +166,11 @@ export const upsert = mutation({
 export const remove = mutation({
   args: { id: v.id("products") },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+    if (user.role !== "admin" && user.role !== "manager") {
+      throw new Error("Unauthorized. Only admins and managers can remove products.");
+    }
+
     const product = await ctx.db.get(args.id);
     if (product) {
       const valueDiff = -(product.costPrice * product.stock);
@@ -155,6 +192,14 @@ export const remove = mutation({
         diffLowStock: (product.stock <= product.reorderLevel && product.stock > 0) ? -1 : 0,
         diffOutOfStock: product.stock <= 0 ? -1 : 0,
       });
+
+      await ctx.db.insert("auditLogs", {
+        userId: user.username,
+        timestamp: Date.now(),
+        action: "DELETE_PRODUCT",
+        beforeValue: { name: product.name, code: product.code, stock: product.stock },
+        referenceId: args.id,
+      });
     }
     await ctx.db.delete(args.id);
   },
@@ -166,9 +211,13 @@ export const adjustStock = mutation({
     quantity: v.number(), // + or -
     reason: v.string(),
     type: v.string(), // "Adjustment", "Damage", "Manual Correction"
-    userId: v.string(),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+    if (user.role !== "admin" && user.role !== "manager") {
+      throw new Error("Unauthorized. Only admins and managers can adjust stock.");
+    }
+
     const product = await ctx.db.get(args.productId);
     if (!product) throw new Error("Product not found");
 
@@ -186,7 +235,7 @@ export const adjustStock = mutation({
       previousStock,
       newStock,
       reason: args.reason,
-      userId: args.userId,
+      userId: user.username,
       createdAt: Date.now(),
     });
 
@@ -242,42 +291,46 @@ export const getLowStock = query({
 
 export const getInventoryAnalytics = query({
   handler: async (ctx) => {
-    const products = await ctx.db.query("products").filter(q => q.eq(q.field("archived"), false)).take(1000);
-    const movements = await ctx.db.query("inventoryMovements").order("desc").take(1000);
+    // 1. Instantly pull aggregates from pre-computed inventoryCounters (1 doc read)
+    const counter = await ctx.db
+      .query("inventoryCounters")
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
+      .first();
+
+    const totalStockValue = counter?.inventoryValue || 0;
+    const lowStockCount = counter?.lowStockItems || 0;
+    const outOfStockCount = counter?.outOfStockItems || 0;
+    const deadStockCount = counter?.deadStockItems || 0;
+
+    // 2. Fetch active products using index (instead of full scan)
+    const products = await ctx.db
+      .query("products")
+      .withIndex("by_archived", (q) => q.eq("archived", false))
+      .take(500);
+
+    // 3. Fetch recent movements (limit to 200 instead of 1000 to keep it very fast)
+    const movements = await ctx.db
+      .query("inventoryMovements")
+      .order("desc")
+      .take(200);
     
     const now = Date.now();
-    const sixMonthsAgo = now - (180 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
 
-    let totalStockValue = 0;
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    const productMovements: Record<string, { lastSeen: number, velocity: number }> = {};
+    const productMovements: Record<string, { velocity: number }> = {};
 
     products.forEach(p => {
-      totalStockValue += p.costPrice * p.stock;
-      if (p.stock <= 0) outOfStockCount++;
-      else if (p.stock <= p.reorderLevel) lowStockCount++;
-      
-      productMovements[p._id] = { lastSeen: 0, velocity: 0 };
+      productMovements[p._id] = { velocity: 0 };
     });
 
     movements.forEach(m => {
       const pid = m.productId;
       if (productMovements[pid]) {
-        if (m.createdAt > productMovements[pid].lastSeen) {
-          productMovements[pid].lastSeen = m.createdAt;
-        }
-        if (m.movementType === "Sale" && m.createdAt > thirtyDaysAgo) {
+        if (m.movementType === "Sale" && (m.createdAt || 0) > thirtyDaysAgo) {
           productMovements[pid].velocity += Math.abs(m.quantity);
         }
       }
     });
-
-    const deadStockCount = products.filter(p => {
-      const last = productMovements[p._id]?.lastSeen || 0;
-      return last < sixMonthsAgo;
-    }).length;
 
     const fastMovingProducts = products
       .map(p => ({
@@ -293,7 +346,6 @@ export const getInventoryAnalytics = query({
       outOfStockCount,
       deadStockCount,
       fastMovingProducts,
-      // Trend placeholders (to be expanded with historical snapshots if required)
       valuationTrend: 12.5,
       lowStockTrend: -2.1
     };

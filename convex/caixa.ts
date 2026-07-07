@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireUser } from "./authHelpers";
 
 // Helper: Check if a timestamp is from a previous day
 const isPreviousDay = (timestamp: number) => {
@@ -52,8 +53,10 @@ export const getSessionMovements = query({
 });
 
 export const openSession = mutation({
-  args: { openingAmount: v.number(), userId: v.string() },
+  args: { openingAmount: v.number() },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+
     const existingOpen = await ctx.db
       .query("caixaSessions")
       .withIndex("by_status", (q) => q.eq("status", "OPEN"))
@@ -64,7 +67,7 @@ export const openSession = mutation({
     }
 
     const sessionId = await ctx.db.insert("caixaSessions", {
-      openedBy: args.userId,
+      openedBy: user.username,
       openedAt: Date.now(),
       openingAmount: args.openingAmount,
       status: "OPEN",
@@ -79,13 +82,13 @@ export const openSession = mutation({
       type: "OPENING",
       amount: args.openingAmount,
       description: "Initial float",
-      userId: args.userId,
+      userId: user.username,
       timestamp: Date.now(),
       runningBalance: args.openingAmount,
     });
 
     await ctx.db.insert("auditLogs", {
-      userId: args.userId,
+      userId: user.username,
       timestamp: Date.now(),
       action: "OPEN_CAIXA_SESSION",
       afterValue: { sessionId, openingAmount: args.openingAmount },
@@ -100,9 +103,10 @@ export const closeSession = mutation({
     sessionId: v.id("caixaSessions"),
     countedCash: v.number(),
     closingNote: v.optional(v.string()),
-    userId: v.string(),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+
     const session = await ctx.db.get(args.sessionId);
     if (!session || session.status !== "OPEN") {
       throw new Error("Invalid or already closed session.");
@@ -129,14 +133,14 @@ export const closeSession = mutation({
         type: "ADJUSTMENT",
         amount: variance,
         description: `Closing variance: ${args.closingNote || 'No note'}`,
-        userId: args.userId,
+        userId: user.username,
         timestamp: Date.now(),
         runningBalance: session.expectedCash + variance,
       });
     }
 
     await ctx.db.insert("auditLogs", {
-      userId: args.userId,
+      userId: user.username,
       timestamp: Date.now(),
       action: "CLOSE_CAIXA_SESSION",
       beforeValue: { expectedCash: session.expectedCash },
@@ -154,11 +158,12 @@ export const addMovement = mutation({
     type: v.string(), // "SALE", "CASH_IN", "CASH_OUT", "SALE_REVERSAL"
     amount: v.number(),
     description: v.string(),
-    userId: v.string(),
     referenceId: v.optional(v.string()),
     referenceType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+
     const session = await ctx.db.get(args.sessionId);
     if (!session || session.status !== "OPEN") {
       throw new Error("No open Caixa session found.");
@@ -208,7 +213,7 @@ export const addMovement = mutation({
       type: args.type,
       amount: args.amount,
       description: args.description,
-      userId: args.userId,
+      userId: user.username,
       timestamp: Date.now(),
       runningBalance,
       referenceId: args.referenceId,
@@ -216,7 +221,7 @@ export const addMovement = mutation({
     });
 
     await ctx.db.insert("auditLogs", {
-      userId: args.userId,
+      userId: user.username,
       timestamp: Date.now(),
       action: `CAIXA_${args.type}`,
       afterValue: { amount: args.amount, runningBalance },

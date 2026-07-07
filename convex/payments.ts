@@ -4,6 +4,7 @@ import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { applyCustomerLedger } from "./ledgerHelpers";
 import { validateCaixaForCash, recordCaixaCash, resolveCaixaSession } from "./caixaHelpers";
+import { requireUser } from "./authHelpers";
 
 export const list = query({
   handler: async (ctx) => {
@@ -42,6 +43,7 @@ export const addPayment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
     const now = Date.now();
 
     if (args.paymentMethod.toLowerCase() === "cash") {
@@ -79,7 +81,7 @@ export const addPayment = mutation({
         args.amount,
         "CASH_IN",
         `Manual payment received for transaction ${args.transactionId}`,
-        "System", // Ideally this would be the actual user, but we don't have it in args currently
+        user.username,
         now,
         paymentId,
         "payment"
