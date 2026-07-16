@@ -3,8 +3,9 @@ import { query, mutation } from "./_generated/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { applyCustomerLedger } from "./ledgerHelpers";
-import { validateCaixaForCash, recordCaixaCash, resolveCaixaSession } from "./caixaHelpers";
+import { processCashPayment, resolveCaixaSession } from "./caixaHelpers";
 import { requireUser } from "./authHelpers";
+import { updateFinancialStats } from "./analyticsHelpers";
 
 export const list = query({
   handler: async (ctx) => {
@@ -46,10 +47,6 @@ export const addPayment = mutation({
     const user = await requireUser(ctx.db, ctx);
     const now = Date.now();
 
-    if (args.paymentMethod.toLowerCase() === "cash") {
-      await validateCaixaForCash(ctx.db, now);
-    }
-
     const session = await resolveCaixaSession(ctx.db, now);
 
     const paymentId = await ctx.db.insert("payments", {
@@ -76,47 +73,26 @@ export const addPayment = mutation({
     });
 
     if (args.paymentMethod.toLowerCase() === "cash") {
-      await recordCaixaCash(
-        ctx.db,
-        args.amount,
-        "CASH_IN",
-        `Manual payment received for transaction ${args.transactionId}`,
-        user.username,
-        now,
-        paymentId,
-        "payment"
-      );
+      await processCashPayment(ctx.db, {
+        amount: args.amount,
+        type: "CASH_IN",
+        description: `Manual payment received for transaction ${args.transactionId}`,
+        userId: user.username,
+        timestamp: now,
+        referenceId: paymentId,
+        referenceType: "payment",
+      });
     }
 
     const todayStr = new Date(now).toISOString().split("T")[0];
 
-    const dailyStat = await ctx.db
-      .query("dailyStats")
-      .withIndex("by_date", (q) => q.eq("date", todayStr))
-      .first();
-
-    const targetKey = normalizePaymentMethod(args.paymentMethod);
-
-    if (dailyStat) {
-      const updatedPaymentsByMethod = { ...(dailyStat.paymentsByMethod || {}) };
-      updatedPaymentsByMethod[targetKey] = (updatedPaymentsByMethod[targetKey] || 0) + args.amount;
-
-      await ctx.db.patch(dailyStat._id, {
-        totalPending: Math.max(0, (dailyStat.totalPending || 0) - args.amount),
-        paymentsByMethod: updatedPaymentsByMethod,
-      });
-    } else {
-      await ctx.db.insert("dailyStats", {
-        date: todayStr,
-        totalRevenue: 0,
-        totalProfit: 0,
-        transactionCount: 0,
-        itemsSold: 0,
-        totalPending: -args.amount,
-        paymentsByMethod: { [targetKey]: args.amount },
-        salesByCategory: {},
-      });
-    }
+    await updateFinancialStats(ctx, {
+      dateStr: todayStr,
+      pendingAmountDelta: -args.amount,
+      paymentsByMethodDelta: { [args.paymentMethod]: args.amount },
+      cashSalesDelta: args.paymentMethod.toLowerCase() === "cash" ? args.amount : 0,
+      debtRecoveredDelta: args.paymentMethod.toLowerCase() !== "store credit" ? args.amount : 0,
+    });
 
     await recomputeCustomerIntelligence(ctx.db, args.customerId);
 

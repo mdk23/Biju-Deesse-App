@@ -112,3 +112,38 @@ export async function recordCaixaCash(
 
   return movementId;
 }
+
+/**
+ * Unifies cash drawer validation and logging into a single transactional service call.
+ */
+export async function processCashPayment(
+  db: DatabaseWriter,
+  args: {
+    amount: number;
+    type: "SALE" | "CASH_IN" | "SALE_REVERSAL";
+    description: string;
+    userId: string;
+    timestamp: number;
+    referenceId?: string;
+    referenceType?: string;
+  }
+) {
+  if (args.amount <= 0) return null;
+
+  // 1. Validate active drawer exists for current day
+  const session = await validateCaixaForCash(db, args.timestamp);
+
+  // 2. Record the movement into Caixa expected cash values
+  const movementId = await recordCaixaCash(
+    db,
+    args.amount,
+    args.type,
+    args.description,
+    args.userId,
+    args.timestamp,
+    args.referenceId,
+    args.referenceType
+  );
+
+  return { sessionId: session._id, movementId };
+}

@@ -3,7 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { updateDailyMovementStats } from "./utils";
 import { requireUser } from "./authHelpers";
 
-async function updateInventoryCountersHelper(ctx: any, args: {
+export async function updateInventoryCountersHelper(ctx: any, args: {
   diffProducts?: number,
   diffUnits?: number,
   diffValue?: number,
@@ -143,17 +143,7 @@ export const upsert = mutation({
       }
     }
 
-    if (valueDiff !== 0) {
-      const globalCounter = await ctx.db
-        .query("globalCounters")
-        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
-        .first();
-      if (globalCounter) {
-        await ctx.db.patch(globalCounter._id, {
-          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
-        });
-      }
-    }
+
 
     await updateInventoryCountersHelper(ctx, {
       diffProducts,
@@ -179,15 +169,7 @@ export const remove = mutation({
     if (product) {
       const valueDiff = -(product.costPrice * product.stock);
       
-      const globalCounter = await ctx.db
-        .query("globalCounters")
-        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
-        .first();
-      if (globalCounter) {
-        await ctx.db.patch(globalCounter._id, {
-          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
-        });
-      }
+
 
       await updateInventoryCountersHelper(ctx, {
         diffProducts: -1,
@@ -227,6 +209,7 @@ export const adjustStock = mutation({
 
     const previousStock = product.stock;
     const newStock = previousStock + args.quantity;
+    const valueDiff = args.quantity * product.costPrice;
 
     // Update product stock
     await ctx.db.patch(args.productId, { stock: newStock });
@@ -243,18 +226,7 @@ export const adjustStock = mutation({
       createdAt: Date.now(),
     });
 
-    const valueDiff = args.quantity * product.costPrice;
-    if (valueDiff !== 0) {
-      const globalCounter = await ctx.db
-        .query("globalCounters")
-        .withIndex("by_counter_id", (q) => q.eq("id", "main"))
-        .first();
-      if (globalCounter) {
-        await ctx.db.patch(globalCounter._id, {
-          inventoryValuation: (globalCounter.inventoryValuation || 0) + valueDiff,
-        });
-      }
-    }
+
 
     let diffLowStock = 0;
     let diffOutOfStock = 0;

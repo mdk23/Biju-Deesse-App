@@ -5,12 +5,19 @@ import { normalizePaymentMethod } from "./utils";
 export const getExecutiveBrief = query({
   args: { period: v.optional(v.string()) }, // "today", "yesterday", "this_week"
   handler: async (ctx, args) => {
-    const globalCounter = await ctx.db
-      .query("globalCounters")
-      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
-      .first();
+    const [globalCounter, invCounter] = await Promise.all([
+      ctx.db
+        .query("globalCounters")
+        .withIndex("by_counter_id", (q: any) => q.eq("id", "main"))
+        .first(),
+      ctx.db
+        .query("inventoryCounters")
+        .withIndex("by_counter_id", (q: any) => q.eq("id", "main"))
+        .first(),
+    ]);
+
     const activeClients = globalCounter?.activeClients || 0;
-    const estimatedValuation = globalCounter?.inventoryValuation || 0;
+    const estimatedValuation = invCounter?.inventoryValue || 0;
 
     const period = args.period || "today";
     const now = new Date();
