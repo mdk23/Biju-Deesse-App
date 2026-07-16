@@ -13,26 +13,31 @@ import { toast } from "sonner";
 import LuxuryLoader from "../../components/LuxuryLoader";
 
 export default function LoginPage() {
+  const [mounted, setMounted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-
+ 
   const { signIn } = useSignIn();
   const { signOut } = useClerk();
   const { isSignedIn, isLoaded: isUserLoaded } = useUser();
   const router = useRouter();
   const convex = useConvex();
+ 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
-    if (isUserLoaded && isSignedIn && !isSubmitting && !isRedirecting) {
+    if (mounted && isUserLoaded && isSignedIn && !isSubmitting && !isRedirecting) {
       console.log("User is already signed in on login page, redirecting to home...");
       window.location.href = "/";
     }
-  }, [isUserLoaded, isSignedIn, isSubmitting, isRedirecting]);
-
-  if (isRedirecting || (isUserLoaded && isSignedIn && !isSubmitting)) {
+  }, [mounted, isUserLoaded, isSignedIn, isSubmitting, isRedirecting]);
+ 
+  if (isRedirecting || (mounted && isUserLoaded && isSignedIn && !isSubmitting)) {
     return <LuxuryLoader text="Entering secure portal..." />;
   }
 

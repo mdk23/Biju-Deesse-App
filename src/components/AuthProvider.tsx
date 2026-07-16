@@ -47,6 +47,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading
   });
 
+  const allowedPublicPaths = ["/login", "/terms", "/privacy", "/support", "/sign-in", "/sign-up"];
+  const isPublicPath = allowedPublicPaths.some(path => pathname?.startsWith(path));
+
   useEffect(() => {
     if (isLoading) return;
 
@@ -85,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } else if (!clerkUser) {
       setFinalUser(null);
-      if (pathname !== "/login") {
+      if (!isPublicPath) {
         window.location.href = "/login";
       }
     } else if (clerkUser && convexUser === null) {
@@ -100,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
     }
-  }, [clerkUser, convexUser, isLoading, pathname, isSigningOut, signOut]);
+  }, [clerkUser, convexUser, isLoading, pathname, isSigningOut, signOut, isPublicPath]);
 
   const logout = () => {
     signOut(() => {
@@ -110,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ user: finalUser, isLoading, logout }}>
-      {isLoading && finalUser === null ? (
+      {isLoading && finalUser === null && !isPublicPath ? (
         <LuxuryLoader text="Synchronizing Session..." />
       ) : children}
     </AuthContext.Provider>

@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
 import { reconcileBalances } from "./ledgerHelpers";
@@ -51,47 +52,64 @@ async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: numb
 }
 
 
+async function hydrateTransactions(ctx: any, transactions: any[]) {
+  const customerIds = Array.from(
+    new Set(transactions.map((tx) => tx.customerId).filter(Boolean))
+  );
+  
+  const productIds = Array.from(
+    new Set(
+      transactions.flatMap((tx) => (tx.items || []).map((item: any) => item.productId)).filter(Boolean)
+    )
+  );
+
+  const [customers, products] = await Promise.all([
+    Promise.all(customerIds.map((id) => ctx.db.get(id))),
+    Promise.all(productIds.map((id) => ctx.db.get(id))),
+  ]);
+
+  const customerMap = new Map(customers.filter(Boolean).map((c: any) => [c._id, c]));
+  const productMap = new Map(products.filter(Boolean).map((p: any) => [p._id, p]));
+
+  return transactions.map((tx) => {
+    let customerName = tx.customerName;
+    let customerTier = tx.customerTier;
+
+    if (!customerName && tx.customerId) {
+      const customer = customerMap.get(tx.customerId);
+      customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
+      customerTier = customer?.financialTier || "Regular";
+    }
+
+    const itemsWithDetails = (tx.items || []).map((item: any) => {
+      if (item.name) return item;
+      const product = productMap.get(item.productId);
+      return {
+        ...item,
+        name: product?.name || "Unknown Product",
+        photo: product?.imageUrl || "",
+      };
+    });
+
+    const totalPaid = (tx.paymentBreakdown || []).reduce((acc: number, p: any) => acc + p.amount, 0);
+    const balance = Math.max(0, tx.total - totalPaid);
+
+    return {
+      ...tx,
+      items: itemsWithDetails,
+      customerName: customerName || "Walk-in",
+      customerTier: customerTier || "Regular",
+      paymentStatus: balance === 0 ? "Paid" : totalPaid > 0 ? "Partial" : "Pending",
+      balance,
+      paymentMethod: tx.paymentBreakdown?.length === 1 ? tx.paymentBreakdown[0].method : "Split",
+    };
+  });
+}
+
 export const list = query({
   handler: async (ctx) => {
     const transactions = await ctx.db.query("transactions").order("desc").take(100);
-
-    return await Promise.all(transactions.map(async (tx) => {
-      let customerName = tx.customerName;
-      let customerTier = tx.customerTier;
-
-      // Fallback rule for older transactions
-      if (!customerName && tx.customerId) {
-        const customer = await ctx.db.get(tx.customerId);
-        customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
-        customerTier = customer?.financialTier || "Regular";
-      }
-
-      const itemsWithDetails = await Promise.all((tx.items || []).map(async (item) => {
-        if (item.name) return item; // Has denormalized data
-
-        const product = await ctx.db.get(item.productId);
-        return {
-          ...item,
-          name: product?.name || "Unknown Product",
-          photo: product?.imageUrl || "",
-        };
-      }));
-
-      // Calculate total paid from breakdown
-      const totalPaid = tx.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-      const balance = Math.max(0, tx.total - totalPaid);
-
-      return {
-        ...tx,
-        items: itemsWithDetails,
-        customerName: customerName || "Walk-in",
-        customerTier: customerTier || "Regular",
-        paymentStatus: balance === 0 ? "Paid" : (totalPaid > 0 ? "Partial" : "Pending"),
-        balance,
-        // For convenience, provide the first method if only one exists
-        paymentMethod: tx.paymentBreakdown.length === 1 ? tx.paymentBreakdown[0].method : "Split",
-      };
-    }));
+    return await hydrateTransactions(ctx, transactions);
   },
 });
 
@@ -123,43 +141,7 @@ export const getRecent = query({
     }
 
     const transactions = await q.order("desc").take(args.limit);
-
-    return await Promise.all(transactions.map(async (tx) => {
-      let customerName = tx.customerName;
-      let customerTier = tx.customerTier;
-
-      // Fallback rule for older transactions
-      if (!customerName && tx.customerId) {
-        const customer = await ctx.db.get(tx.customerId);
-        customerName = customer ? `${customer.firstName} ${customer.lastName}` : "Walk-in";
-        customerTier = customer?.financialTier || "Regular";
-      }
-
-      const itemsWithDetails = await Promise.all((tx.items || []).map(async (item) => {
-        if (item.name) return item; // Has denormalized data
-
-        const product = await ctx.db.get(item.productId);
-        return {
-          ...item,
-          name: product?.name || "Unknown Product",
-          photo: product?.imageUrl || "",
-        };
-      }));
-
-      // Calculate total paid from breakdown
-      const totalPaid = tx.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-      const balance = Math.max(0, tx.total - totalPaid);
-
-      return {
-        ...tx,
-        items: itemsWithDetails,
-        customerName: customerName || "Walk-in",
-        customerTier: customerTier || "Regular",
-        paymentStatus: balance === 0 ? "Paid" : (totalPaid > 0 ? "Partial" : "Pending"),
-        balance,
-        paymentMethod: tx.paymentBreakdown.length === 1 ? tx.paymentBreakdown[0].method : "Split",
-      };
-    }));
+    return await hydrateTransactions(ctx, transactions);
   },
 });
 
@@ -992,6 +974,412 @@ export const remove = mutation({
         });
       }
     }
+  },
+});
+
+export const listFiltered = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    searchQuery: v.optional(v.string()),
+    statusFilter: v.optional(v.string()),
+    paymentFilter: v.optional(v.string()),
+    tierFilter: v.optional(v.string()),
+    minAmount: v.optional(v.string()),
+    maxAmount: v.optional(v.string()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const getStartOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T00:00:00");
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+
+    const getEndOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T23:59:59.999");
+      return isNaN(d.getTime()) ? Infinity : d.getTime();
+    };
+
+    const start = args.startDate ? getStartOfDayStr(args.startDate) : 0;
+    const end = args.endDate ? getEndOfDayStr(args.endDate) : Infinity;
+
+    let queryBuilder;
+    if (args.startDate || args.endDate) {
+      queryBuilder = ctx.db.query("transactions").withIndex("by_createdAt", (q) =>
+        q.gte("createdAt", start).lte("createdAt", end)
+      );
+    } else {
+      queryBuilder = ctx.db.query("transactions");
+    }
+
+    const allTx = await queryBuilder.order("desc").collect();
+
+    const filtered = allTx.filter((s) => {
+      if (args.searchQuery) {
+        const queryLower = args.searchQuery.toLowerCase();
+        const receiptMatch = (s.receiptNumber || "").toLowerCase().includes(queryLower) ||
+          (s.receiptNumber || "").toLowerCase().replace("inv-", "ord-").includes(queryLower);
+        const customerMatch = (s.customerName || "Walk-in").toLowerCase().includes(queryLower);
+        const cashierMatch = (s.cashierName || "").toLowerCase().includes(queryLower);
+        if (!receiptMatch && !customerMatch && !cashierMatch) return false;
+      }
+
+      if (args.statusFilter && args.statusFilter !== "All Status") {
+        if (s.status !== args.statusFilter) return false;
+      }
+
+      if (args.paymentFilter && args.paymentFilter !== "All Methods") {
+        const matchesPayment = (s.paymentBreakdown || []).some((p: any) => p.method === args.paymentFilter);
+        if (!matchesPayment) return false;
+      }
+
+      if (args.tierFilter && args.tierFilter !== "All Tiers") {
+        const computedTier = (s.customerTier || "").toLowerCase();
+        const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
+        if (args.tierFilter === "Walk-in") {
+          if (!isWalkIn) return false;
+        } else if (args.tierFilter === "VIP / Platinum") {
+          if (isWalkIn || (computedTier !== "vip" && computedTier !== "platinum")) return false;
+        } else if (args.tierFilter === "Gold / Premium") {
+          if (isWalkIn || (computedTier !== "gold" && computedTier !== "premium")) return false;
+        } else if (args.tierFilter === "Standard / Regular") {
+          if (isWalkIn || (computedTier !== "standard" && computedTier !== "regular")) return false;
+        }
+      }
+
+      const min = args.minAmount ? parseFloat(args.minAmount) : -Infinity;
+      const max = args.maxAmount ? parseFloat(args.maxAmount) : Infinity;
+      if (s.total < min || s.total > max) return false;
+
+      return true;
+    });
+
+    const numItems = args.paginationOpts.numItems;
+    const cursor = args.paginationOpts.cursor;
+    
+    let startIndex = 0;
+    if (cursor) {
+      const cursorVal = parseInt(cursor, 10);
+      if (!isNaN(cursorVal)) startIndex = cursorVal;
+    }
+
+    const page = filtered.slice(startIndex, startIndex + numItems);
+    const hasMore = startIndex + numItems < filtered.length;
+    const continueCursor = hasMore ? (startIndex + numItems).toString() : null;
+
+    const hydratedPage = await hydrateTransactions(ctx, page);
+
+    return {
+      page: hydratedPage,
+      isDone: !hasMore,
+      continueCursor: continueCursor || "",
+    };
+  },
+});
+
+export const getSalesMetrics = query({
+  args: {
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    paymentFilter: v.optional(v.string()),
+    tierFilter: v.optional(v.string()),
+    statusFilter: v.optional(v.string()),
+    minAmount: v.optional(v.string()),
+    maxAmount: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const getStartOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T00:00:00");
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+
+    const getEndOfDayStr = (dateStr: string) => {
+      const d = new Date(dateStr + "T23:59:59.999");
+      return isNaN(d.getTime()) ? Infinity : d.getTime();
+    };
+
+    const start = args.startDate ? getStartOfDayStr(args.startDate) : 0;
+    const end = args.endDate ? getEndOfDayStr(args.endDate) : Infinity;
+
+    const products = await ctx.db.query("products").collect();
+    
+    let queryBuilder;
+    if (args.startDate || args.endDate) {
+      queryBuilder = ctx.db.query("transactions").withIndex("by_createdAt", (q) =>
+        q.gte("createdAt", start).lte("createdAt", end)
+      );
+    } else {
+      queryBuilder = ctx.db.query("transactions");
+    }
+    const allTx = await queryBuilder.order("desc").collect();
+
+    const applyFilters = (txs: any[]) => {
+      return txs.filter((s) => {
+        if (args.statusFilter && args.statusFilter !== "All Status") {
+          if (s.status !== args.statusFilter) return false;
+        }
+
+        if (args.paymentFilter && args.paymentFilter !== "All Methods") {
+          const matchesPayment = (s.paymentBreakdown || []).some((p: any) => p.method === args.paymentFilter);
+          if (!matchesPayment) return false;
+        }
+
+        if (args.tierFilter && args.tierFilter !== "All Tiers") {
+          const computedTier = (s.customerTier || "").toLowerCase();
+          const isWalkIn = !s.customerId || s.customerName === "Walk-in" || !s.customerName;
+          if (args.tierFilter === "Walk-in") {
+            if (!isWalkIn) return false;
+          } else if (args.tierFilter === "VIP / Platinum") {
+            if (isWalkIn || (computedTier !== "vip" && computedTier !== "platinum")) return false;
+          } else if (args.tierFilter === "Gold / Premium") {
+            if (isWalkIn || (computedTier !== "gold" && computedTier !== "premium")) return false;
+          } else if (args.tierFilter === "Standard / Regular") {
+            if (isWalkIn || (computedTier !== "standard" && computedTier !== "regular")) return false;
+          }
+        }
+
+        const min = args.minAmount ? parseFloat(args.minAmount) : -Infinity;
+        const max = args.maxAmount ? parseFloat(args.maxAmount) : Infinity;
+        if (s.total < min || s.total > max) return false;
+
+        return true;
+      });
+    };
+
+    const filteredSales = applyFilters(allTx);
+
+    const totalRevenue = filteredSales.reduce((acc, s) => acc + s.total, 0);
+    const totalProfit = filteredSales.reduce((acc, s) => acc + s.profit, 0);
+
+    const clientIds = new Set();
+    let walkInCount = 0;
+    filteredSales.forEach((s) => {
+      if (s.customerId) clientIds.add(s.customerId);
+      else walkInCount++;
+    });
+    const activeClients = clientIds.size + (walkInCount > 0 ? 1 : 0);
+    const avgTransaction = filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0;
+
+    const brief = await ctx.db.query("financialCounters").withIndex("by_counter_id", (q) => q.eq("id", "main")).first();
+    const estimatedValuation = brief?.totalCustomerCredit || 0;
+
+    const totalPending = filteredSales.reduce((acc, s) => {
+      const amountReceived = s.amountReceived || 0;
+      const pending = s.total - amountReceived;
+      return acc + (pending > 0 ? pending : 0);
+    }, 0);
+
+    const dynamicKPIs = {
+      totalRevenue,
+      totalProfit,
+      activeClients,
+      avgTransaction,
+      estimatedValuation,
+      totalPending,
+    };
+
+    let trends = { revenue: 0, profit: 0, activeClients: 0, avgTransaction: 0, totalPending: 0 };
+    if (start > 0 && end < Infinity) {
+      const duration = end - start;
+      const prevEnd = start - 1;
+      const prevStart = start - duration;
+
+      const prevTxRaw = await ctx.db.query("transactions")
+        .withIndex("by_createdAt", (q) => q.gte("createdAt", prevStart).lte("createdAt", prevEnd))
+        .collect();
+      const prevSales = applyFilters(prevTxRaw);
+
+      const prevRevenue = prevSales.reduce((acc, s) => acc + s.total, 0);
+      const prevProfit = prevSales.reduce((acc, s) => acc + s.profit, 0);
+      const prevAvg = prevSales.length > 0 ? prevRevenue / prevSales.length : 0;
+
+      const prevClientIds = new Set();
+      let prevWalkIn = 0;
+      prevSales.forEach((s) => {
+        if (s.customerId) prevClientIds.add(s.customerId);
+        else prevWalkIn++;
+      });
+      const prevClientsCount = prevClientIds.size + (prevWalkIn > 0 ? 1 : 0);
+
+      const prevPending = prevSales.reduce((acc, s) => {
+        const amountReceived = s.amountReceived || 0;
+        const pending = s.total - amountReceived;
+        return acc + (pending > 0 ? pending : 0);
+      }, 0);
+
+      const calculatePercentChange = (curr: number, prev: number) => {
+        if (prev === 0) return curr > 0 ? 100 : 0;
+        return Math.round(((curr - prev) / prev) * 1000) / 10;
+      };
+
+      trends = {
+        revenue: calculatePercentChange(totalRevenue, prevRevenue),
+        profit: calculatePercentChange(totalProfit, prevProfit),
+        activeClients: calculatePercentChange(activeClients, prevClientsCount),
+        avgTransaction: calculatePercentChange(avgTransaction, prevAvg),
+        totalPending: calculatePercentChange(totalPending, prevPending),
+      };
+    }
+
+    const getSparklineDataForMetric = (metric: "total" | "profit" | "count") => {
+      if (filteredSales.length === 0) {
+        return Array(6).fill(0).map(() => ({ value: 0 }));
+      }
+      const actualStart = start > 0 ? start : Math.min(...filteredSales.map((s) => s.createdAt || s._creationTime));
+      const actualEnd = end < Infinity ? end : Math.max(...filteredSales.map((s) => s.createdAt || s._creationTime));
+      const interval = (actualEnd - actualStart) / 6 || 1;
+
+      return Array(6).fill(0).map((_, i) => {
+        const intervalStart = actualStart + i * interval;
+        const intervalEnd = intervalStart + interval;
+        const salesInInterval = filteredSales.filter(
+          (s) => (s.createdAt || s._creationTime) >= intervalStart && (s.createdAt || s._creationTime) <= intervalEnd
+        );
+        let value = 0;
+        if (metric === "total") {
+          value = salesInInterval.reduce((acc, s) => acc + s.total, 0);
+        } else if (metric === "profit") {
+          value = salesInInterval.reduce((acc, s) => acc + s.profit, 0);
+        } else {
+          value = salesInInterval.length;
+        }
+        return { value };
+      });
+    };
+
+    const sparklines = {
+      total: getSparklineDataForMetric("total"),
+      profit: getSparklineDataForMetric("profit"),
+      count: getSparklineDataForMetric("count"),
+    };
+
+    const formatDateKey = (timestamp: number, format: "hour" | "day" | "date" | "month") => {
+      const d = new Date(timestamp);
+      if (format === "hour") return `${d.getHours().toString().padStart(2, "0")}:00`;
+      if (format === "day") return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+      if (format === "date") return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    };
+
+    let format: "hour" | "day" | "date" | "month" = "month";
+    let durationDays = 30;
+    if (start > 0 && end < Infinity) {
+      durationDays = (end - start) / (1000 * 60 * 60 * 24);
+      if (durationDays <= 2) format = "hour";
+      else if (durationDays <= 8) format = "day";
+      else if (durationDays <= 35) format = "date";
+    }
+
+    const dataMap: Record<string, { name: string; revenue: number; profit: number; orders: number }> = {};
+    if (format === "hour") {
+      for (let i = 0; i < 24; i += 2) {
+        const key = `${i.toString().padStart(2, "0")}:00`;
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      }
+    } else if (format === "day") {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const current = new Date(start > 0 ? start : Date.now() - 6 * 24 * 3600 * 1000);
+      for (let i = 0; i < 7; i++) {
+        const key = days[current.getDay()];
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+        current.setDate(current.getDate() + 1);
+      }
+    } else if (format === "date") {
+      const current = new Date(start > 0 ? start : Date.now() - 29 * 24 * 3600 * 1000);
+      const limit = new Date(end < Infinity ? end : Date.now());
+      let count = 0;
+      while (current <= limit && count < 32) {
+        const key = formatDateKey(current.getTime(), "date");
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+        current.setDate(current.getDate() + 1);
+        count++;
+      }
+    } else {
+      const monthsSet = new Set<string>();
+      filteredSales.forEach((s) => monthsSet.add(formatDateKey(s._creationTime, "month")));
+      if (monthsSet.size === 0) {
+        const current = new Date();
+        for (let i = 0; i < 6; i++) {
+          monthsSet.add(formatDateKey(current.getTime(), "month"));
+          current.setMonth(current.getMonth() - 1);
+        }
+      }
+      Array.from(monthsSet).reverse().forEach((key) => {
+        dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      });
+    }
+
+    filteredSales.forEach((s) => {
+      const key = formatDateKey(s._creationTime, format);
+      if (!dataMap[key]) dataMap[key] = { name: key, revenue: 0, profit: 0, orders: 0 };
+      dataMap[key].revenue += s.total;
+      dataMap[key].profit += s.profit;
+      dataMap[key].orders += 1;
+    });
+
+    const dynamicRevenueHistory = Object.values(dataMap);
+
+    const categoryCounts: Record<string, number> = {};
+    let totalItems = 0;
+    filteredSales.forEach((s) => {
+      (s.items || []).forEach((item: any) => {
+        const p = products.find((prod) => prod._id === item.productId);
+        const category = p?.category || "Other";
+        categoryCounts[category] = (categoryCounts[category] || 0) + item.quantity;
+        totalItems += item.quantity;
+      });
+    });
+
+    const dynamicCategoryDistribution = Object.entries(categoryCounts).map(([name, count]) => ({
+      name,
+      value: totalItems > 0 ? Math.round((count / totalItems) * 100) : 0,
+      count,
+    })).sort((a, b) => b.value - a.value);
+
+    const methodCounts: Record<string, number> = {};
+    let totalPaid = 0;
+    filteredSales.forEach((s) => {
+      if (s.paymentBreakdown && s.paymentBreakdown.length > 0) {
+        s.paymentBreakdown.forEach((p: any) => {
+          methodCounts[p.method] = (methodCounts[p.method] || 0) + p.amount;
+          totalPaid += p.amount;
+        });
+      } else if (s.paymentMethod) {
+        methodCounts[s.paymentMethod] = (methodCounts[s.paymentMethod] || 0) + s.total;
+        totalPaid += s.total;
+      }
+    });
+
+    const dynamicPayoutDistribution = Object.entries(methodCounts).map(([name, amount]) => ({
+      name,
+      amount,
+      value: totalPaid > 0 ? Math.round((amount / totalPaid) * 100) : 0,
+    })).sort((a, b) => b.value - a.value);
+
+    const topItemCounts: Record<string, { name: string; count: number }> = {};
+    filteredSales.forEach((s) => {
+      (s.items || []).forEach((item: any) => {
+        if (!topItemCounts[item.productId]) {
+          const p = products.find((prod) => prod._id === item.productId);
+          topItemCounts[item.productId] = { name: p?.name || item.name || "Unknown", count: 0 };
+        }
+        topItemCounts[item.productId].count += item.quantity;
+      });
+    });
+
+    const topSellingItems = Object.values(topItemCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return {
+      dynamicKPIs,
+      trends,
+      sparklines,
+      dynamicRevenueHistory,
+      dynamicCategoryDistribution,
+      dynamicPayoutDistribution,
+      topSellingItems,
+    };
   },
 });
 

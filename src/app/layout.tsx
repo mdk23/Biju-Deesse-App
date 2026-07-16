@@ -51,6 +51,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${playfairDisplay.variable} ${manrope.variable} ${rcDemo.variable} ${agathaItalic.variable} ${agathaRegular.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <head>
         <link
