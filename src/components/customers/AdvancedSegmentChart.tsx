@@ -105,6 +105,7 @@ export const AdvancedSegmentChart = ({
   const yKey = metricMode === "customers" ? "count" : "totalSpent";
 
   const getBarColor = (entry: any) => {
+    if (!entry) return "#8a4853";
     if (entry.group === "Financial") return FINANCIAL_COLORS[entry.label]?.bar || "#8a4853";
     return LOYALTY_COLORS[entry.label]?.bar || "#5b4fcf";
   };
@@ -112,6 +113,7 @@ export const AdvancedSegmentChart = ({
   const CustomBar = (props: any) => {
     const { x, y, width, height, index } = props;
     const d = displayData[index];
+    if (!d) return null;
     const color = getBarColor(d);
     return (
       <g>
