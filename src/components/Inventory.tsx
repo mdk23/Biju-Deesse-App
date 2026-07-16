@@ -96,19 +96,6 @@ const StatCard = ({ title, value, subValue, icon: Icon, percentage, color }: any
   </div>
 );
 
-const InventoryActions = () => (
-  <div className="flex flex-wrap gap-3 mb-8">
-    <button className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-label-caps text-[11px] shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all">
-      <Plus size={16} /> STOCK IN
-    </button>
-    <button className="flex items-center gap-2 px-5 py-2.5 bg-white/60 backdrop-blur-md border border-primary/20 text-primary rounded-xl font-label-caps text-[11px] hover:bg-primary/5 transition-all">
-      <ArrowUpRight size={16} /> STOCK OUT
-    </button>
-    <button className="flex items-center gap-2 px-5 py-2.5 bg-white/60 backdrop-blur-md border border-outline-variant text-on-surface-variant rounded-xl font-label-caps text-[11px] hover:bg-surface-variant/50 transition-all">
-      <Filter size={16} /> ADJUSTMENTS
-    </button>
-  </div>
-);
 
 // --- Main Component ---
 
@@ -123,6 +110,30 @@ export default function Inventory() {
     api.movements.getForProduct,
     selectedProduct ? { productId: selectedProduct._id } : "skip"
   ) || [];
+
+  const [activeTab, setActiveTab] = useState<"catalog" | "movements">("catalog");
+  const [isAdjustingStock, setIsAdjustingStock] = useState(false);
+  const [adjustProduct, setAdjustProduct] = useState<any | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [adjustForm, setAdjustForm] = useState({
+    quantity: 1,
+  });
+  const [damageReason, setDamageReason] = useState("");
+  const [damageNotes, setDamageNotes] = useState("");
+
+  const [originalStock, setOriginalStock] = useState<number | null>(null);
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+
+  const allMovements = useQuery(api.movements.list) || [];
+  const adjustStockMutation = useMutation(api.products.adjustStock);
+
+  const damagedCount = useMemo(() => {
+    if (!selectedProductMovements) return 0;
+    return selectedProductMovements
+      .filter((m: any) => m.movementType === "Damage")
+      .reduce((sum: number, m: any) => sum + Math.abs(m.quantity), 0);
+  }, [selectedProductMovements]);
+
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -225,6 +236,8 @@ export default function Inventory() {
 
   const handleOpenAdd = () => {
     setEditingId(null);
+    setOriginalStock(null);
+    setAdjustmentReason("");
     setFormData({
       code: '',
       name: '',
@@ -241,6 +254,8 @@ export default function Inventory() {
 
   const handleOpenEdit = (product: any) => {
     setEditingId(product._id);
+    setOriginalStock(product.stock);
+    setAdjustmentReason("");
     setFormData({
       code: product.code,
       name: product.name,
@@ -259,15 +274,23 @@ export default function Inventory() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const isStockChanged = editingId && originalStock !== null && formData.stock !== originalStock;
+      if (isStockChanged && (!adjustmentReason || adjustmentReason.trim() === "")) {
+        toast.error("An adjustment reason is mandatory when editing the stock quantity.");
+        return;
+      }
       await upsertProduct({
         id: (editingId ?? undefined) as any,
         ...formData,
+        adjustmentReason: isStockChanged ? adjustmentReason : undefined,
       });
       setIsAddingProduct(false);
       setEditingId(null);
+      setOriginalStock(null);
+      setAdjustmentReason("");
       toast.success(editingId ? "Inventory piece updated" : "New piece registered in the vault");
-    } catch (error) {
-      toast.error("Failed to save inventory piece");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save inventory piece");
       console.error(error);
     }
   };
@@ -289,6 +312,46 @@ export default function Inventory() {
         },
       },
     });
+  };
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const prodId = adjustProduct?._id || selectedProductId;
+    if (!prodId) {
+      toast.error("Please select a product");
+      return;
+    }
+    if (adjustForm.quantity <= 0) {
+      toast.error("Quantity must be greater than zero");
+      return;
+    }
+    if (!damageReason || damageReason.trim() === "") {
+      toast.error("Please select a damage reason");
+      return;
+    }
+
+    try {
+      const fullReason = damageReason + (damageNotes.trim() !== "" ? `: ${damageNotes.trim()}` : "");
+      const q = -adjustForm.quantity;
+      await adjustStockMutation({
+        productId: prodId as any,
+        quantity: q,
+        reason: fullReason,
+        type: "Damage",
+      });
+      setIsAdjustingStock(false);
+      setAdjustProduct(null);
+      setSelectedProductId("");
+      setDamageReason("");
+      setDamageNotes("");
+      setAdjustForm({
+        quantity: 1,
+      });
+      toast.success("Defective/damaged stock movement registered successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to register damage");
+      console.error(err);
+    }
   };
 
   return (
@@ -347,258 +410,371 @@ export default function Inventory() {
         />
       </div>
 
-      <InventoryActions />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-        {/* Alerts Section */}
-        <div className="glass-panel p-6 rounded-2xl border-l-4 border-error/50">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="text-error" size={20} />
-              <h3 className="font-headline-md text-lg text-primary">Critical Alerts</h3>
-            </div>
-            <span className="bg-error/10 text-error px-2 py-0.5 rounded text-[10px] font-bold">4 ISSUES</span>
-          </div>
-          <div className="space-y-4">
-            {[
-              { label: 'Negative Stock Detected', desc: 'SKU: PRD-102 (Bracelet)', type: 'error' },
-              { label: 'Missing Inventory Scan', desc: 'Section: Vault B, Row 4', type: 'warning' },
-              { label: 'Dead Stock Threshold', desc: '12 items idle > 9 months', type: 'warning' },
-              { label: 'Low Margin Warning', desc: 'Celestial Collection (Promo)', type: 'info' },
-            ].map((alert, i) => (
-              <div key={i} className="p-3 bg-white/40 rounded-xl border border-white/60 hover:bg-white/60 transition-colors cursor-pointer group">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-label-caps text-[11px] text-on-surface">{alert.label}</p>
-                    <p className="font-body-md text-[10px] text-on-surface-variant">{alert.desc}</p>
-                  </div>
-                  <ChevronRight size={14} className="text-outline opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </div>
-            ))}
-          </div>
-          <button className="w-full mt-6 py-2 border border-error/20 text-error font-label-caps text-[10px] rounded-lg hover:bg-error/5 transition-colors">RESOLVE ALL</button>
-        </div>
-
-        {/* Category Distribution Chart */}
-        <div className="glass-panel p-6 rounded-2xl flex flex-col">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="font-headline-md text-lg text-primary">Category Distribution</h3>
-              <p className="font-label-caps text-[9px] text-outline">TOTAL VOLUME BY TYPE</p>
-            </div>
-          </div>
-          <div className="h-48 w-full min-h-[192px]">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <PieChart>
-                <Pie
-                  data={categoryDistribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={70}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {categoryDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {categoryDistribution.map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Inventory Aging Chart */}
-        <div className="glass-panel p-6 rounded-2xl flex flex-col">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="font-headline-md text-lg text-primary">Inventory Aging</h3>
-              <p className="font-label-caps text-[9px] text-outline">STOCK RETENTION PERIOD</p>
-            </div>
-          </div>
-          <div className="h-48 w-full min-h-[192px]">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-              <BarChart data={agingData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} />
-                <YAxis hide />
-                <Tooltip
-                  cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                />
-                <Bar dataKey="value" fill="#8a4853" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="mt-4 font-body-md text-[10px] text-on-surface-variant text-center italic">
-            {products.length > 0
-              ? `* ${Math.round((agingData[3].value / products.length) * 100)}% of inventory has exceeded the 90-day retention threshold.`
-              : '* No inventory data available.'}
-          </p>
-        </div>
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-3 mb-8">
+        <button
+          onClick={() => {
+            setAdjustForm({ quantity: 1 });
+            setAdjustProduct(null);
+            setSelectedProductId("");
+            setDamageReason("");
+            setDamageNotes("");
+            setIsAdjustingStock(true);
+          }}
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-xl font-label-caps text-[11px] shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+        >
+          <AlertTriangle size={16} /> REGISTER DAMAGE / LOSS
+        </button>
+        <button
+          onClick={() => setActiveTab(activeTab === "catalog" ? "movements" : "catalog")}
+          className={`flex items-center gap-2 px-5 py-2.5 backdrop-blur-md border text-on-surface-variant rounded-xl font-label-caps text-[11px] hover:bg-surface-variant/50 transition-all ${
+            activeTab === "movements" ? "bg-primary/10 border-primary text-primary" : "bg-white/60 border-outline-variant"
+          }`}
+        >
+          <Filter size={16} /> {activeTab === "movements" ? "VIEW CATALOG" : "VIEW MOVEMENTS LOG"}
+        </button>
       </div>
 
-      {/* Product Table Section */}
-      <section className="glass-panel rounded-2xl overflow-hidden shadow-xl border border-white/40">
-        <div className="px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-primary/10">
-          <div className="flex items-center gap-4 w-full md:w-auto">
-            <h4 className="font-headline-md text-xl text-primary whitespace-nowrap">Product Catalog</h4>
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} />
-              <input
-                type="text"
-                placeholder="Search SKU or Name..."
-                value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                className="w-full pl-10 pr-4 py-2 bg-white/50 border border-primary/10 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-              />
-            </div>
-            
-            <div className="flex items-center gap-2 ml-4">
-              <label className="font-label-caps text-[10px] text-outline whitespace-nowrap">SHOW ARCHIVED</label>
-              <button
-                type="button"
-                onClick={() => { setShowArchived(!showArchived); setCurrentPage(1); }}
-                className={`w-10 h-5 rounded-full transition-colors relative ${showArchived ? 'bg-error' : 'bg-outline-variant'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${showArchived ? 'left-[22px]' : 'left-0.5'}`}></div>
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto">
-            {['All', 'Earrings', 'Bracelets', 'Charms', 'Piercings', 'Necklaces', 'Necklace & Earring Sets', 'Watches', 'Rings'].map(cat => (
-              <button
-                key={cat}
-                onClick={() => { setCategoryFilter(cat); setCurrentPage(1); }}
-                className={`px-4 py-1.5 rounded-full font-label-caps text-[10px] transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-primary text-on-primary shadow-md' : 'bg-white/60 text-primary border border-primary/20 hover:bg-primary/5'}`}
-              >
-                {cat.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-primary/5 border-b border-primary/10 font-label-caps text-[11px] text-primary">
-                <th className="px-8 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('name')}>
-                  <div className="flex items-center gap-1">PRODUCT INFO {sortColumn === 'name' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('category')}>
-                  <div className="flex items-center gap-1">CATEGORY {sortColumn === 'category' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('costPrice')}>
-                  <div className="flex items-center gap-1">COST PRICE {sortColumn === 'costPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('sellingPrice')}>
-                  <div className="flex items-center gap-1">SELLING PRICE {sortColumn === 'sellingPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('stock')}>
-                  <div className="flex items-center gap-1">QUANTITY {sortColumn === 'stock' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('status')}>
-                  <div className="flex items-center gap-1">STATUS {sortColumn === 'status' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
-                </th>
-                <th className="px-8 py-5 text-right">ACTION</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-primary/5">
-              {paginatedProducts.map((product: any) => (
-                <tr
-                  key={product._id}
-                  className="hover:bg-white/50 transition-colors group cursor-pointer"
-                  onClick={() => setSelectedProduct(product)}
-                >
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-lg overflow-hidden border border-white bg-surface-container shadow-sm">
-                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                      </div>
+      {activeTab === "catalog" ? (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+            {/* Alerts Section */}
+            <div className="glass-panel p-6 rounded-2xl border-l-4 border-error/50">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="text-error" size={20} />
+                  <h3 className="font-headline-md text-lg text-primary">Critical Alerts</h3>
+                </div>
+                <span className="bg-error/10 text-error px-2 py-0.5 rounded text-[10px] font-bold">4 ISSUES</span>
+              </div>
+              <div className="space-y-4">
+                {[
+                  { label: 'Negative Stock Detected', desc: 'SKU: PRD-102 (Bracelet)', type: 'error' },
+                  { label: 'Missing Inventory Scan', desc: 'Section: Vault B, Row 4', type: 'warning' },
+                  { label: 'Dead Stock Threshold', desc: '12 items idle > 9 months', type: 'warning' },
+                  { label: 'Low Margin Warning', desc: 'Celestial Collection (Promo)', type: 'info' },
+                ].map((alert, i) => (
+                  <div key={i} className="p-3 bg-white/40 rounded-xl border border-white/60 hover:bg-white/60 transition-colors cursor-pointer group">
+                    <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-body-md text-sm font-bold text-on-surface">{product.name}</p>
-                        <p className="font-data-tabular text-[10px] text-outline">{product.code}</p>
+                        <p className="font-label-caps text-[11px] text-on-surface">{alert.label}</p>
+                        <p className="font-body-md text-[10px] text-on-surface-variant">{alert.desc}</p>
                       </div>
+                      <ChevronRight size={14} className="text-outline opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className="font-label-caps text-[10px] text-on-surface-variant bg-surface-container px-2 py-1 rounded">
-                      {product.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 font-data-tabular text-sm text-outline">
-                    {(product.costPrice).toLocaleString()} Mt
-                  </td>
-                  <td className="px-6 py-5 font-data-tabular text-sm font-bold text-primary">
-                    {(product.sellingPrice).toLocaleString()} Mt
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex flex-col">
-                      <span className="font-data-tabular text-sm">{product.stock} units</span>
-                      <span className="font-label-caps text-[9px] text-secondary">{product.stock} available</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${product.stock > product.reorderLevel ? 'bg-secondary-container/20 text-secondary' :
-                      product.stock > 0 ? 'bg-primary-fixed/30 text-primary' :
-                        'bg-error-container/30 text-error'
-                      }`}>
-                      {product.stock > product.reorderLevel ? 'In Stock' : (product.stock > 0 ? 'Low Stock' : 'Out of Stock')}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleOpenEdit(product); }}
-                        className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
-                      >
-                        <History size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedProduct(product); }}
-                        className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                    </div>
-                  </td>
+                  </div>
+                ))}
+              </div>
+              <button className="w-full mt-6 py-2 border border-error/20 text-error font-label-caps text-[10px] rounded-lg hover:bg-error/5 transition-colors">RESOLVE ALL</button>
+            </div>
+
+            {/* Category Distribution Chart */}
+            <div className="glass-panel p-6 rounded-2xl flex flex-col">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="font-headline-md text-lg text-primary">Category Distribution</h3>
+                  <p className="font-label-caps text-[9px] text-outline">TOTAL VOLUME BY TYPE</p>
+                </div>
+              </div>
+              <div className="h-48 w-full min-h-[192px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <PieChart>
+                    <Pie
+                      data={categoryDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={70}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {categoryDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {categoryDistribution.map((entry, index) => (
+                  <div key={entry.name} className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                    <span className="font-label-caps text-[10px] text-on-surface-variant">{entry.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Inventory Aging Chart */}
+            <div className="glass-panel p-6 rounded-2xl flex flex-col">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="font-headline-md text-lg text-primary">Inventory Aging</h3>
+                  <p className="font-label-caps text-[9px] text-outline">STOCK RETENTION PERIOD</p>
+                </div>
+              </div>
+              <div className="h-48 w-full min-h-[192px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <BarChart data={agingData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e2de" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#857374' }} />
+                    <YAxis hide />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(138, 72, 83, 0.05)' }}
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                    />
+                    <Bar dataKey="value" fill="#8a4853" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="mt-4 font-body-md text-[10px] text-on-surface-variant text-center italic">
+                {products.length > 0
+                  ? `* ${Math.round((agingData[3].value / products.length) * 100)}% of inventory has exceeded the 90-day retention threshold.`
+                  : '* No inventory data available.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Product Table Section */}
+          <section className="glass-panel rounded-2xl overflow-hidden shadow-xl border border-white/40">
+            <div className="px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-primary/10">
+              <div className="flex items-center gap-4 w-full md:w-auto">
+                <h4 className="font-headline-md text-xl text-primary whitespace-nowrap">Product Catalog</h4>
+                <div className="relative flex-1 md:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Search SKU or Name..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    className="w-full pl-10 pr-4 py-2 bg-white/50 border border-primary/10 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                  />
+                </div>
+                
+                <div className="flex items-center gap-2 ml-4">
+                  <label className="font-label-caps text-[10px] text-outline whitespace-nowrap">SHOW ARCHIVED</label>
+                  <button
+                    type="button"
+                    onClick={() => { setShowArchived(!showArchived); setCurrentPage(1); }}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${showArchived ? 'bg-error' : 'bg-outline-variant'}`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${showArchived ? 'left-[22px]' : 'left-0.5'}`}></div>
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                {['All', 'Earrings', 'Bracelets', 'Charms', 'Piercings', 'Necklaces', 'Necklace & Earring Sets', 'Watches', 'Rings'].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => { setCategoryFilter(cat); setCurrentPage(1); }}
+                    className={`px-4 py-1.5 rounded-full font-label-caps text-[10px] transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-primary text-on-primary shadow-md' : 'bg-white/60 text-primary border border-primary/20 hover:bg-primary/5'}`}
+                  >
+                    {cat.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-primary/5 border-b border-primary/10 font-label-caps text-[11px] text-primary">
+                    <th className="px-8 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('name')}>
+                      <div className="flex items-center gap-1">PRODUCT INFO {sortColumn === 'name' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('category')}>
+                      <div className="flex items-center gap-1">CATEGORY {sortColumn === 'category' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('costPrice')}>
+                      <div className="flex items-center gap-1">COST PRICE {sortColumn === 'costPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('sellingPrice')}>
+                      <div className="flex items-center gap-1">SELLING PRICE {sortColumn === 'sellingPrice' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('stock')}>
+                      <div className="flex items-center gap-1">QUANTITY {sortColumn === 'stock' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-6 py-5 cursor-pointer hover:bg-primary/10 transition-colors" onClick={() => handleSort('status')}>
+                      <div className="flex items-center gap-1">STATUS {sortColumn === 'status' && (sortDirection === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>)}</div>
+                    </th>
+                    <th className="px-8 py-5 text-right">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-primary/5">
+                  {paginatedProducts.map((product: any) => (
+                    <tr
+                      key={product._id}
+                      className="hover:bg-white/50 transition-colors group cursor-pointer"
+                      onClick={() => setSelectedProduct(product)}
+                    >
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-lg overflow-hidden border border-white bg-surface-container shadow-sm">
+                            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                          </div>
+                          <div>
+                            <p className="font-body-md text-sm font-bold text-on-surface">{product.name}</p>
+                            <p className="font-data-tabular text-[10px] text-outline">{product.code}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className="font-label-caps text-[10px] text-on-surface-variant bg-surface-container px-2 py-1 rounded">
+                          {product.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 font-data-tabular text-sm text-outline">
+                        {(product.costPrice).toLocaleString()} Mt
+                      </td>
+                      <td className="px-6 py-5 font-data-tabular text-sm font-bold text-primary">
+                        {(product.sellingPrice).toLocaleString()} Mt
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="font-data-tabular text-sm">{product.stock} units</span>
+                          <span className="font-label-caps text-[9px] text-secondary">{product.stock} available</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${product.stock > product.reorderLevel ? 'bg-secondary-container/20 text-secondary' :
+                          product.stock > 0 ? 'bg-primary-fixed/30 text-primary' :
+                            'bg-error-container/30 text-error'
+                          }`}>
+                          {product.stock > product.reorderLevel ? 'In Stock' : (product.stock > 0 ? 'Low Stock' : 'Out of Stock')}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(product); }}
+                            className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
+                          >
+                            <History size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedProduct(product); }}
+                            className="p-2 hover:bg-primary/10 rounded-full text-outline hover:text-primary transition-colors"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-8 py-4 bg-primary/5 flex justify-between items-center border-t border-primary/10">
+              <p className="font-label-caps text-[10px] text-outline">
+                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} pieces
+              </p>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  PREVIOUS
+                </button>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  NEXT
+                </button>
+              </div>
+            </div>
+          </section>
+        </>
+      ) : (
+        <div className="glass-panel rounded-2xl p-8 shadow-xl border border-white/40 mb-10">
+          <div className="flex justify-between items-center mb-6 border-b border-primary/10 pb-4">
+            <div>
+              <h3 className="font-headline-md text-2xl text-primary font-bold">Stock Movements Audit Log</h3>
+              <p className="font-label-caps text-[9px] text-outline tracking-widest mt-1">REAL-TIME INVENTORY AUDIT TRAIL</p>
+            </div>
+            <span className="bg-primary/10 text-primary px-3 py-1 rounded-lg font-label-caps text-[10px] font-bold">
+              {allMovements.length} MOVEMENTS RECORDED
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-primary/5 border-b border-primary/10 font-label-caps text-[11px] text-primary">
+                  <th className="px-6 py-4">DATE & TIME</th>
+                  <th className="px-6 py-4">PRODUCT</th>
+                  <th className="px-6 py-4">SKU / CODE</th>
+                  <th className="px-6 py-4">MOVEMENT TYPE</th>
+                  <th className="px-6 py-4 text-center">QUANTITY</th>
+                  <th className="px-6 py-4">REASON</th>
+                  <th className="px-6 py-4">USER</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-8 py-4 bg-primary/5 flex justify-between items-center border-t border-primary/10">
-          <p className="font-label-caps text-[10px] text-outline">
-            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} pieces
-          </p>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              PREVIOUS
-            </button>
-            <button 
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="px-4 py-1 border border-primary/20 rounded-lg text-primary font-label-caps text-[10px] hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              NEXT
-            </button>
+              </thead>
+              <tbody className="divide-y divide-primary/5">
+                {allMovements.length > 0 ? (
+                  allMovements.map((movement: any) => {
+                    const product = products.find((p: any) => p._id === movement.productId);
+                    const formattedTime = new Date(movement.createdAt).toLocaleString("en-MZ", {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                    const isQtyPositive = movement.quantity > 0;
+                    const isDamage = movement.movementType === "Damage";
+
+                    return (
+                      <tr key={movement._id} className="hover:bg-white/40 transition-colors">
+                        <td className="px-6 py-4 font-data-tabular text-xs text-outline">{formattedTime}</td>
+                        <td className="px-6 py-4 font-body-md text-xs font-bold text-on-surface">
+                          {product ? product.name : "Unknown Product"}
+                        </td>
+                        <td className="px-6 py-4 font-data-tabular text-xs text-outline">
+                          {product ? product.code : "N/A"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`font-label-caps text-[9px] px-2 py-0.5 rounded font-bold ${
+                            isDamage
+                              ? "bg-error/15 text-error"
+                              : movement.movementType === "Sale"
+                              ? "bg-blue-50 text-blue-700 border border-blue-200"
+                              : isQtyPositive
+                              ? "bg-secondary/15 text-secondary"
+                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                          }`}>
+                            {movement.movementType}
+                          </span>
+                        </td>
+                        <td className={`px-6 py-4 font-data-tabular text-xs font-bold text-center ${
+                          isQtyPositive ? "text-secondary" : "text-error"
+                        }`}>
+                          {isQtyPositive ? `+${movement.quantity}` : movement.quantity}
+                        </td>
+                        <td className="px-6 py-4 font-body-md text-xs text-on-surface-variant italic">
+                          {movement.reason}
+                        </td>
+                        <td className="px-6 py-4 font-label-caps text-[10px] text-outline">
+                          {movement.userId || "System"}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-10 text-center text-outline italic text-sm">
+                      No stock movements have been recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </section>
+      )}
 
       {/* Product Details Modal */}
       <AnimatePresence>
@@ -718,9 +894,9 @@ export default function Inventory() {
                       <p className="font-label-caps text-[10px] text-outline mb-1">RESERVED</p>
                       <p className="font-headline-md text-2xl text-primary">0</p>
                     </div>
-                    <div className="bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center opacity-40">
+                    <div className={`bg-white/60 p-4 rounded-2xl border border-white shadow-sm text-center ${damagedCount > 0 ? '' : 'opacity-40'}`}>
                       <p className="font-label-caps text-[10px] text-outline mb-1">DAMAGED</p>
-                      <p className="font-headline-md text-2xl text-error">0</p>
+                      <p className="font-headline-md text-2xl text-error">{damagedCount}</p>
                     </div>
                   </div>
                 </div>
@@ -785,25 +961,177 @@ export default function Inventory() {
                   </div>
                 </div>
 
-                <div className="flex gap-4 pt-6 border-t border-outline-variant/30">
+                <div className="flex flex-col gap-3 pt-6 border-t border-outline-variant/30">
                   <button
-                    onClick={() => handleOpenEdit(selectedProduct)}
-                    className="flex-1 py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:opacity-90 transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+                    onClick={() => {
+                      setAdjustProduct(selectedProduct);
+                      setAdjustForm({ quantity: 1 });
+                      setDamageReason("");
+                      setDamageNotes("");
+                      setIsAdjustingStock(true);
+                    }}
+                    className="w-full py-3.5 bg-secondary text-on-secondary rounded-2xl font-label-caps text-xs shadow-lg shadow-secondary/15 hover:opacity-90 transition-all flex items-center justify-center gap-2 uppercase tracking-widest font-bold"
                   >
-                    <History size={16} /> Edit Piece Details
+                    <AlertTriangle size={15} /> Report Piece Damage / Loss
                   </button>
-                  <button
-                    onClick={() => handleDelete(selectedProduct._id)}
-                    className="flex-1 py-4 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all uppercase tracking-widest"
-                  >
-                    Permanent Removal
-                  </button>
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => handleOpenEdit(selectedProduct)}
+                      className="flex-1 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-xs hover:opacity-90 transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+                    >
+                      <History size={14} /> Edit Details
+                    </button>
+                    <button
+                      onClick={() => handleDelete(selectedProduct._id)}
+                      className="flex-1 py-3 bg-white border border-error/30 text-error rounded-2xl font-label-caps text-xs hover:bg-error/5 transition-all uppercase tracking-widest"
+                    >
+                      Remove Piece
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Stock Adjustment Drawer */}
+      <AnimatePresence>
+        {isAdjustingStock && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-end">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsAdjustingStock(false);
+                setAdjustProduct(null);
+                setSelectedProductId("");
+              }}
+              className="absolute inset-0 bg-black/20 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-xl h-full bg-surface-container shadow-2xl overflow-y-auto border-l border-white/40 flex flex-col"
+            >
+              {/* Drawer Header */}
+              <div className="p-8 pb-12 bg-atelier-gradient relative">
+                <button
+                  onClick={() => {
+                    setIsAdjustingStock(false);
+                    setAdjustProduct(null);
+                    setSelectedProductId("");
+                  }}
+                  className="absolute top-6 right-6 p-2 bg-white/40 backdrop-blur-md rounded-full text-primary hover:bg-white transition-all shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="flex flex-col items-center text-center mt-4">
+                  <div className="w-20 h-20 bg-white/40 backdrop-blur-md rounded-3xl border-2 border-white flex items-center justify-center text-primary shadow-xl mb-4">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h2 className="font-headline-md text-3xl text-primary uppercase tracking-tight">
+                    Register Damage / Loss
+                  </h2>
+                  <p className="font-label-caps text-[10px] text-outline mt-2 tracking-[0.2em]">
+                    REGISTER DEFECTIVE / DAMAGED ITEMS
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Content */}
+              <form className="flex-1 p-8 space-y-8" onSubmit={handleAdjustStockSubmit}>
+                {/* Select Product */}
+                <div className="space-y-1.5">
+                  <label className="font-label-caps text-[9px] text-outline ml-1">SELECT PIECE / PRODUCT</label>
+                  {adjustProduct ? (
+                    <div className="p-4 bg-white/40 border border-white/60 rounded-xl flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-lg overflow-hidden border border-white bg-surface-container shadow-sm flex-shrink-0">
+                        <img src={adjustProduct.imageUrl} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <div>
+                        <p className="font-body-md text-sm font-bold text-on-surface">{adjustProduct.name}</p>
+                        <p className="font-data-tabular text-[10px] text-outline">{adjustProduct.code} • Stock: {adjustProduct.stock} available</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => setSelectedProductId(e.target.value)}
+                      className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-body-md text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                      required
+                    >
+                      <option value="" disabled>-- Select a Jewelry Piece --</option>
+                      {products.map((p: any) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name} ({p.code}) - {p.stock} units
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Quantity */}
+                <div className="space-y-1.5">
+                  <label className="font-label-caps text-[9px] text-outline ml-1">QUANTITY</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={adjustForm.quantity}
+                    onChange={(e) => setAdjustForm({ ...adjustForm, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                    className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-data-tabular text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                    required
+                  />
+                </div>
+
+                {/* Damage Reason */}
+                <div className="space-y-1.5">
+                  <label className="font-label-caps text-[9px] text-outline ml-1">DAMAGE REASON (REQUIRED)</label>
+                  <select
+                    value={damageReason}
+                    onChange={(e) => setDamageReason(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-body-md text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                    required
+                  >
+                    <option value="" disabled>-- Select Damage Type --</option>
+                    <option value="Broken Item">Broken Item</option>
+                    <option value="Lost Item">Lost Item</option>
+                    <option value="Stolen Item">Stolen Item</option>
+                    <option value="Manufacturing Defect">Manufacturing Defect</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Reason Notes */}
+                <div className="space-y-1.5">
+                  <label className="font-label-caps text-[9px] text-outline ml-1">DAMAGE NOTES / DETAILS (OPTIONAL)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="e.g. Scratched gold setting, loose center diamond"
+                    value={damageNotes}
+                    onChange={(e) => setDamageNotes(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/40 border border-white/60 rounded-xl font-body-md text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm resize-none"
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    className="w-full py-4 bg-primary text-on-primary rounded-2xl font-label-caps text-xs shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 uppercase tracking-widest font-bold"
+                  >
+                    <Check size={16} /> Save Damage Record
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Add Product Drawer */}
       <AnimatePresence>
         {isAddingProduct && (
@@ -971,7 +1299,9 @@ export default function Inventory() {
                 <section>
                   <div className="flex items-center gap-2 mb-6">
                     <div className="w-1 h-4 bg-outline rounded-full"></div>
-                    <h4 className="font-label-caps text-[11px] text-outline tracking-widest">INITIAL STOCK CONTROL</h4>
+                    <h4 className="font-label-caps text-[11px] text-outline tracking-widest">
+                      {editingId ? 'STOCK CONTROL' : 'INITIAL STOCK CONTROL'}
+                    </h4>
                   </div>
                   <div className="space-y-1.5">
                     <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">TOTAL STOCK</label>
@@ -983,7 +1313,29 @@ export default function Inventory() {
                       required
                     />
                   </div>
-                  <div className="space-y-1.5">
+                  
+                  {editingId && originalStock !== null && formData.stock !== originalStock && (
+                    <div className="space-y-1.5 mt-4">
+                      <label className="font-label-caps text-[9px] text-error font-bold ml-1 block text-center">
+                        ADJUSTMENT REASON (REQUIRED)
+                      </label>
+                      <select
+                        value={adjustmentReason}
+                        onChange={(e) => setAdjustmentReason(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/40 border border-error/50 rounded-xl font-body-md text-sm focus:ring-4 focus:ring-primary/5 outline-none transition-all shadow-sm"
+                        required
+                      >
+                        <option value="" disabled>-- Select Reason --</option>
+                        <option value="Stock Count">Stock Count</option>
+                        <option value="Data Correction">Data Correction</option>
+                        <option value="Product Found">Product Found</option>
+                        <option value="Inventory Audit">Inventory Audit</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5 mt-4">
                     <label className="font-label-caps text-[9px] text-outline ml-1 text-center block">REORDER LEVEL</label>
                     <input
                       type="number"
@@ -993,7 +1345,7 @@ export default function Inventory() {
                       required
                     />
                   </div>
-                  <div className="flex flex-col justify-center items-center">
+                  <div className="flex flex-col justify-center items-center mt-4">
                     <label className="font-label-caps text-[9px] text-outline mb-2">ARCHIVED</label>
                     <button
                       type="button"

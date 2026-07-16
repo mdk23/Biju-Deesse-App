@@ -737,7 +737,7 @@ export const remove = mutation({
         // Log restoration movement
         await ctx.db.insert("inventoryMovements", {
           productId: item.productId,
-          movementType: "Return", // Or "Adjustment"
+          movementType: "Sale Reversal",
           quantity: item.quantity,
           previousStock,
           newStock,
@@ -746,7 +746,7 @@ export const remove = mutation({
           createdAt: Date.now(),
         });
 
-        await updateDailyMovementStats(ctx, "Return", item.quantity);
+        await updateDailyMovementStats(ctx, "Sale Reversal", item.quantity);
       }
     }
 

@@ -13,9 +13,8 @@ export async function updateDailyMovementStats(ctx: any, type: string, quantity:
   
   let diffs: any = {};
   if (type === "Damage") diffs.damagedItems = Math.abs(quantity);
-  else if (type === "Return") diffs.returnedItems = Math.abs(quantity);
-  else if (type === "Adjustment") diffs.adjustedItems = Math.abs(quantity);
-  else if (type === "Manual Correction") diffs.manualCorrections = Math.abs(quantity);
+  else if (type === "Sale Reversal" || type === "Return") diffs.returnedItems = Math.abs(quantity);
+  else if (type === "Stock Adjustment" || type === "Initial Stock" || type === "Adjustment" || type === "Manual Correction") diffs.adjustedItems = Math.abs(quantity);
 
   if (Object.keys(diffs).length === 0) return;
 

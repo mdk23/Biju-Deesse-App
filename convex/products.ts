@@ -67,6 +67,7 @@ export const upsert = mutation({
     archived: v.boolean(),
     description: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    adjustmentReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx.db, ctx);
@@ -74,7 +75,7 @@ export const upsert = mutation({
       throw new Error("Unauthorized. Only admins and managers can create or edit products.");
     }
 
-    const { id, ...data } = args;
+    const { id, adjustmentReason, ...data } = args;
     let valueDiff = 0;
     let idToReturn = id;
 
@@ -100,13 +101,16 @@ export const upsert = mutation({
         if (wasOut && !isOut) diffOutOfStock = -1;
 
         if (diffUnits !== 0) {
+          if (!adjustmentReason || adjustmentReason.trim() === "") {
+            throw new Error("Adjustment reason is required when editing stock quantity.");
+          }
           await ctx.db.insert("inventoryMovements", {
             productId: id,
-            movementType: "Manual Correction",
+            movementType: "Stock Adjustment",
             quantity: diffUnits,
             previousStock: existing.stock,
             newStock: data.stock,
-            reason: "Catalog product details modified directly",
+            reason: adjustmentReason,
             userId: user.username,
             createdAt: Date.now(),
           });
@@ -128,7 +132,7 @@ export const upsert = mutation({
       if (data.stock !== 0) {
         await ctx.db.insert("inventoryMovements", {
           productId: idToReturn,
-          movementType: "Adjustment",
+          movementType: "Initial Stock",
           quantity: data.stock,
           previousStock: 0,
           newStock: data.stock,
