@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { updateDailyMovementStats } from "./utils";
 import { requireUser } from "./authHelpers";
 
@@ -33,6 +33,60 @@ export async function updateInventoryCountersHelper(ctx: any, args: {
   }
 }
 
+// Recalculates inventoryCounters from the actual products table, instead of
+// trusting the incremental diffs. Fixes drift caused by any write path that
+// touches the products table without going through the mutations in this
+// file (e.g. a bulk import or a direct dashboard edit).
+export const recomputeInventoryCounters = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const products = await ctx.db.query("products").collect();
+
+    let totalProducts = 0;
+    let totalUnitsInStock = 0;
+    let inventoryValue = 0;
+    let lowStockItems = 0;
+    let outOfStockItems = 0;
+
+    for (const p of products) {
+      if (p.archived) continue;
+      totalProducts += 1;
+      totalUnitsInStock += p.stock;
+      inventoryValue += p.stock * p.costPrice;
+      if (p.stock <= 0) outOfStockItems += 1;
+      else if (p.stock <= p.reorderLevel) lowStockItems += 1;
+    }
+
+    const counter = await ctx.db
+      .query("inventoryCounters")
+      .withIndex("by_counter_id", (q) => q.eq("id", "main"))
+      .first();
+
+    if (counter) {
+      await ctx.db.patch(counter._id, {
+        totalProducts,
+        totalUnitsInStock,
+        inventoryValue,
+        lowStockItems,
+        outOfStockItems,
+      });
+    } else {
+      await ctx.db.insert("inventoryCounters", {
+        id: "main",
+        totalProducts,
+        totalUnitsInStock,
+        inventoryValue,
+        lowStockItems,
+        outOfStockItems,
+        deadStockItems: 0,
+        reservedStock: 0,
+      });
+    }
+
+    return { totalProducts, totalUnitsInStock, inventoryValue, lowStockItems, outOfStockItems };
+  },
+});
+
 // Get all products (live subscription ready)
 export const list = query({
   args: { archived: v.optional(v.boolean()) },
@@ -42,6 +96,14 @@ export const list = query({
       .query("products")
       .withIndex("by_archived", (q) => q.eq("archived", archivedStatus))
       .take(500);
+  },
+});
+
+// Get every product (including archived) for a full data export
+export const listAllForExport = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("products").collect();
   },
 });
 

@@ -23,7 +23,8 @@ import {
   Camera,
   Check,
   Tag,
-  Gem
+  Gem,
+  Download
 } from 'lucide-react';
 import {
   BarChart,
@@ -62,9 +63,10 @@ interface InventoryProduct {
   lastMovement: string;
 }
 
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 
 // No static MOCK_INVENTORY here anymore
 
@@ -104,6 +106,43 @@ export default function Inventory() {
   const products = useQuery(api.products.list, { archived: showArchived }) || [];
   const upsertProduct = useMutation(api.products.upsert);
   const deleteProduct = useMutation(api.products.remove);
+  const convex = useConvex();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportInventory = async () => {
+    setIsExporting(true);
+    try {
+      const allProducts = await convex.query(api.products.listAllForExport, {});
+      if (!allProducts || allProducts.length === 0) {
+        toast.error("No products to export");
+        return;
+      }
+
+      const rows = allProducts.map((p) => ({
+        code: p.code,
+        name: p.name,
+        category: p.category,
+        costPrice: p.costPrice,
+        sellingPrice: p.sellingPrice,
+        stock: p.stock,
+        reorderLevel: p.reorderLevel,
+        archived: p.archived,
+        description: p.description ?? "",
+        imageUrl: p.imageUrl ?? "",
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Inventory_Export_${dateStr}.xlsx`);
+      toast.success(`Exported ${allProducts.length} products`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to export inventory");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const selectedProductMovements = useQuery(
@@ -432,6 +471,13 @@ export default function Inventory() {
           }`}
         >
           <Filter size={16} /> {activeTab === "movements" ? "VIEW CATALOG" : "VIEW MOVEMENTS LOG"}
+        </button>
+        <button
+          onClick={handleExportInventory}
+          disabled={isExporting}
+          className="flex items-center gap-2 px-5 py-2.5 bg-white/60 backdrop-blur-md border border-outline-variant text-on-surface-variant rounded-xl font-label-caps text-[11px] hover:bg-surface-variant/50 transition-all disabled:opacity-60"
+        >
+          <Download size={16} /> {isExporting ? "EXPORTING..." : "EXPORT TO EXCEL"}
         </button>
       </div>
 
