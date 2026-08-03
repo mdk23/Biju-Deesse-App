@@ -64,7 +64,7 @@ export async function validateCaixaForCash(db: DatabaseReader | DatabaseWriter, 
 export async function recordCaixaCash(
   db: DatabaseWriter,
   amount: number,
-  type: "SALE" | "CASH_IN" | "SALE_REVERSAL",
+  type: "SALE" | "CASH_IN" | "SALE_REVERSAL" | "CASH_OUT",
   description: string,
   userId: string,
   timestamp: number,
@@ -75,9 +75,13 @@ export async function recordCaixaCash(
 
   const session = await resolveCaixaSession(db, timestamp);
 
-  const isReversal = type === "SALE_REVERSAL";
-  const netCash = isReversal ? -amount : amount;
+  const isOutflow = type === "SALE_REVERSAL" || type === "CASH_OUT";
+  const netCash = isOutflow ? -amount : amount;
   const runningBalance = session.expectedCash + netCash;
+
+  if (type === "CASH_OUT" && runningBalance < 0) {
+    throw new ConvexError("Insufficient cash in the Caixa drawer to cover this payment.");
+  }
 
   const patchData: any = { expectedCash: runningBalance };
   if (type === "SALE") {
@@ -86,6 +90,8 @@ export async function recordCaixaCash(
     patchData.totalCashSales = session.totalCashSales - amount;
   } else if (type === "CASH_IN") {
     patchData.totalCashIn = session.totalCashIn + amount;
+  } else if (type === "CASH_OUT") {
+    patchData.totalCashOut = session.totalCashOut + amount;
   }
 
   await db.patch(session._id, patchData);
@@ -120,7 +126,7 @@ export async function processCashPayment(
   db: DatabaseWriter,
   args: {
     amount: number;
-    type: "SALE" | "CASH_IN" | "SALE_REVERSAL";
+    type: "SALE" | "CASH_IN" | "SALE_REVERSAL" | "CASH_OUT";
     description: string;
     userId: string;
     timestamp: number;

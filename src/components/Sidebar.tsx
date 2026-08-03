@@ -18,6 +18,8 @@ const navItems = [
   { href: '/inventory', icon: 'inventory_2', label: 'Inventory' },
   { href: '/customers', icon: 'people', label: 'Customers' },
   { href: '/sales', icon: 'trending_up', label: 'Sales' },
+  { href: '/expenses', icon: 'receipt_long', label: 'Expenses' },
+  { href: '/expenses/reports', icon: 'bar_chart', label: 'Expense Reports' },
   { href: '/settings', icon: 'settings', label: 'Settings' },
 ];
 

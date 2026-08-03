@@ -11,4 +11,20 @@ crons.cron(
   {}
 );
 
+// Generate the current period's expense for every active recurring template
+crons.cron(
+  "daily-recurring-expense-generation",
+  "0 0 * * *", // daily at 00:00 UTC
+  internal.expenseTemplates.generateRecurringExpensesSweep,
+  {}
+);
+
+// Flip stale Pending expenses whose due date has passed to Overdue
+crons.cron(
+  "daily-expense-overdue-sweep",
+  "5 0 * * *", // daily at 00:05 UTC
+  internal.expenses.sweepOverdueExpenses,
+  {}
+);
+
 export default crons;

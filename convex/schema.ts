@@ -188,7 +188,59 @@ export default defineSchema({
     referenceId: v.optional(v.string()),
     ipAddress: v.optional(v.string()),
   }).index("by_timestamp", ["timestamp"])
-    .index("by_action", ["action"]),
+    .index("by_action", ["action"])
+    .index("by_referenceId", ["referenceId"]),
+
+  expenseTemplates: defineTable({
+    name: v.string(),
+    category: v.string(),
+    amount: v.number(),
+    frequency: v.union(v.literal("Daily"), v.literal("Weekly"), v.literal("Monthly")),
+    dueDay: v.optional(v.number()), // 1-31, for Monthly
+    dayOfWeek: v.optional(v.number()), // 0-6, for Weekly
+    startDate: v.number(), // Timestamp
+    endDate: v.optional(v.number()), // Timestamp
+    active: v.boolean(),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  }).index("by_active", ["active"])
+    .index("by_category", ["category"]),
+
+  expenses: defineTable({
+    templateId: v.optional(v.id("expenseTemplates")),
+    title: v.string(),
+    category: v.string(),
+    amount: v.number(),
+    dueDate: v.number(), // Timestamp
+    paymentDate: v.optional(v.number()), // Timestamp
+    status: v.union(v.literal("Pending"), v.literal("Paid"), v.literal("Overdue"), v.literal("Cancelled")),
+    paymentMethod: v.optional(v.string()),
+    origin: v.union(v.literal("Manual"), v.literal("Recurring")),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  }).index("by_status_and_dueDate", ["status", "dueDate"])
+    .index("by_dueDate", ["dueDate"])
+    .index("by_category", ["category"])
+    .index("by_templateId_and_dueDate", ["templateId", "dueDate"])
+    .index("by_paymentDate", ["paymentDate"])
+    .index("by_origin", ["origin"]),
+
+  expenseCounters: defineTable({
+    id: v.string(), // "main" or "YYYY-MM" (bucketed by due-date month)
+    totalCount: v.number(),
+    paidCount: v.number(),
+    pendingCount: v.number(),
+    overdueCount: v.number(),
+    cancelledCount: v.number(),
+    paidAmount: v.number(),
+    pendingAmount: v.number(),
+    overdueAmount: v.number(),
+    expensesByCategory: v.record(v.string(), v.number()),
+    recurringCount: v.number(),
+    manualCount: v.number(),
+  }).index("by_counter_id", ["id"]),
 
   dailyStats: defineTable({
     date: v.string(), // "YYYY-MM-DD" format
