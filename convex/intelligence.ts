@@ -56,6 +56,61 @@ async function updateCustomerCountersHelper(db: DatabaseWriter, oldC: any, newC:
 }
 
 
+const NINETY_DAYS_MS = 90 * 24 * 3600 * 1000;
+const ELITE_ORDER_THRESHOLD = 20;
+const ELITE_SPEND_THRESHOLD = 500000;
+const GROWING_ORDER_THRESHOLD = 5;
+const GROWING_SPEND_THRESHOLD = 100000;
+
+/**
+ * Deterministic rule ladder for customerHealth -- evaluated top-down, first
+ * match wins. Not a weighted score: each tier is a hard boolean gate.
+ *  1. New Client    -- orderCount === 0.
+ *  2. At Risk        -- creditStatus === "Overdue" always wins, regardless
+ *                        of how big a spender the customer otherwise is.
+ *  3. (from here, "active" = purchased within the last 90 days; inactive
+ *     customers fall straight to the "At Risk" bottom fallback)
+ *  4. Elite Client   -- active, orderCount >= 20 AND totalSpent >= 500,000,
+ *                        and not "Outstanding" (Elite/Valuable both forbid
+ *                        any unpaid debt, even if it's not yet overdue).
+ *  5. Valuable Client -- active, orderCount >= 20 OR totalSpent >= 500,000,
+ *                        and not "Outstanding".
+ *  6. Growing Client  -- active, orderCount >= 5 OR totalSpent >= 100,000.
+ *                        No debt check -- a customer can be "Growing" while
+ *                        "Outstanding" (just not yet Overdue).
+ *  7. At Risk (fallback) -- inactive 90+ days, or active but too thin on
+ *                        orders/spend to qualify as "Growing".
+ */
+export function computeCustomerHealth(params: {
+  orderCount: number;
+  totalSpent: number;
+  lastPurchaseDate?: number;
+  creditStatus: string;
+  now: number;
+}): string {
+  const { orderCount, totalSpent, lastPurchaseDate, creditStatus, now } = params;
+
+  if (orderCount === 0) return "New Client";
+  if (creditStatus === "Overdue") return "At Risk";
+
+  const active = lastPurchaseDate !== undefined && lastPurchaseDate >= now - NINETY_DAYS_MS;
+  if (!active) return "At Risk";
+
+  const notOutstanding = creditStatus !== "Outstanding";
+
+  if (orderCount >= ELITE_ORDER_THRESHOLD && totalSpent >= ELITE_SPEND_THRESHOLD && notOutstanding) {
+    return "Elite Client";
+  }
+  if ((orderCount >= ELITE_ORDER_THRESHOLD || totalSpent >= ELITE_SPEND_THRESHOLD) && notOutstanding) {
+    return "Valuable Client";
+  }
+  if (orderCount >= GROWING_ORDER_THRESHOLD || totalSpent >= GROWING_SPEND_THRESHOLD) {
+    return "Growing Client";
+  }
+
+  return "At Risk";
+}
+
 export async function recomputeCustomerIntelligence(db: DatabaseWriter | DatabaseReader, customerId: Id<"customers">) {
   const customer = await db.get(customerId);
   if (!customer) return null;
@@ -196,17 +251,14 @@ export async function recomputeCustomerIntelligence(db: DatabaseWriter | Databas
     customerScore = Math.round(Math.max(0, Math.min(100, scoreRaw)));
   }
 
-  // 6. Compute Customer Health
-  let customerHealth = "At Risk";
-  if (orderCount === 0) {
-    customerHealth = "New Client";
-  } else if (customerScore >= 90) {
-    customerHealth = "Elite Client";
-  } else if (customerScore >= 75) {
-    customerHealth = "Valuable Client";
-  } else if (customerScore >= 50) {
-    customerHealth = "Growing Client";
-  }
+  // 6. Compute Customer Health (deterministic rule ladder -- see computeCustomerHealth)
+  const customerHealth = computeCustomerHealth({
+    orderCount,
+    totalSpent,
+    lastPurchaseDate,
+    creditStatus,
+    now,
+  });
 
   // Write changes back to the database
   if ("patch" in db) {

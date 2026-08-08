@@ -22,6 +22,8 @@ import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
 import { useAuth } from "./AuthProvider";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePaymentEntries } from "../hooks/usePaymentEntries";
+import { CustomerBalanceBadge } from "./customers/CustomerBalanceBadge";
 
 export default function POS() {
   const { user } = useAuth();
@@ -32,6 +34,7 @@ export default function POS() {
   const createTransaction = useMutation(api.transactions.create);
 
   const [activeCategory, setActiveCategory] = useState("Earrings");
+  const [productSearch, setProductSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
     null,
   );
@@ -39,13 +42,20 @@ export default function POS() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [cart, setCart] = useState<any[]>([]);
 
-  const [paymentEntries, setPaymentEntries] = useState<
-    { id: string; method: string; amount: string }[]
-  >([{ id: "1", method: "Cash", amount: "" }]);
   const [changeHandling, setChangeHandling] = useState("Cash");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCustomer = customers.find((c) => c._id === selectedCustomerId);
+  const {
+    paymentEntries,
+    paymentMethods,
+    amountReceived,
+    updateMethod,
+    updateAmount,
+    addEntry,
+    removeEntry,
+    reset: resetPaymentEntries,
+  } = usePaymentEntries(selectedCustomer);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return customers.slice(0, 8);
@@ -59,11 +69,22 @@ export default function POS() {
   }, [customers, customerSearch]);
 
   const filteredProducts = useMemo(() => {
-    if (!activeCategory) return products;
-    return products.filter((p) =>
-      p.category.toLowerCase().includes(activeCategory.toLowerCase()),
-    );
-  }, [products, activeCategory]);
+    let result = products;
+    if (activeCategory) {
+      result = result.filter((p) =>
+        p.category.toLowerCase().includes(activeCategory.toLowerCase()),
+      );
+    }
+    const query = productSearch.trim().toLowerCase();
+    if (query) {
+      result = result.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          (p.code || "").toLowerCase().includes(query),
+      );
+    }
+    return result;
+  }, [products, activeCategory, productSearch]);
 
   const handleAddToCart = (product: any) => {
     const existing = cart.find((i) => i.id === product._id);
@@ -109,12 +130,6 @@ export default function POS() {
 
     return { subtotal, discount, total, profit };
   }, [cart]);
-
-  const amountReceived = useMemo(
-    () =>
-      paymentEntries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
-    [paymentEntries],
-  );
 
   // Auto-derived settlement state
   const settlementType = useMemo(() => {
@@ -243,7 +258,7 @@ export default function POS() {
 
       toast.success(`Transaction Complete: ${result.receiptNumber}`);
       setCart([]);
-      setPaymentEntries([{ id: "1", method: "Cash", amount: "" }]);
+      resetPaymentEntries();
       setSelectedCustomerId(null);
       setCustomerSearch("");
     } catch (err: any) {
@@ -276,6 +291,8 @@ export default function POS() {
                 className="w-full pl-12 pr-4 py-3 bg-transparent border-b border-primary/20 focus:border-primary focus:ring-0 font-label-caps text-label-caps outline-none transition-all placeholder:text-outline/50"
                 placeholder="SEARCH BY NAME, SKU, OR BARCODE"
                 type="text"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
               />
             </div>
             <button className="p-3 bg-surface-container rounded-lg border border-outline-variant/30 hover:bg-surface-variant transition-colors">
@@ -391,6 +408,16 @@ export default function POS() {
               <p className="text-[11px] text-on-surface-variant">
                 Tier: {selectedCustomer ? `${selectedCustomer.financialTier} (${selectedCustomer.loyaltyLevel})` : "N/A"}
               </p>
+              {selectedCustomer && (
+                <div className="mt-1">
+                  <CustomerBalanceBadge
+                    creditBalance={selectedCustomer.creditBalance}
+                    debitBalance={selectedCustomer.debitBalance}
+                    formatCurrency={formatCurrency}
+                    variant="compact"
+                  />
+                </div>
+              )}
             </div>
             {selectedCustomer && (
               <button
@@ -613,28 +640,10 @@ export default function POS() {
                 >
                   <select
                     value={entry.method}
-                    onChange={(e) =>
-                      setPaymentEntries((prev) =>
-                        prev.map((p) => {
-                          if (p.id === entry.id) {
-                            const newMethod = e.target.value;
-                            let newAmount = p.amount;
-                            if (newMethod === "Store Credit" && selectedCustomer?.creditBalance) {
-                              if (Number(newAmount) > selectedCustomer.creditBalance) {
-                                newAmount = selectedCustomer.creditBalance.toString();
-                              }
-                            }
-                            return { ...p, method: newMethod, amount: newAmount };
-                          }
-                          return p;
-                        }),
-                      )
-                    }
+                    onChange={(e) => updateMethod(entry.id, e.target.value)}
                     className="bg-surface-container border border-outline-variant/30 rounded-lg px-2 py-2 text-[11px] font-bold text-primary outline-none w-28 flex-shrink-0 cursor-pointer"
                   >
-                    {["Cash", "BCI", "BIM", "M-Pesa", "e-Mola", "Conta Movel", "Bank Transfer"]
-                      .concat(selectedCustomer?.creditBalance && selectedCustomer.creditBalance > 0 ? ["Store Credit"] : [])
-                      .map((m) => (
+                    {paymentMethods.map((m) => (
                       <option key={m} value={m}>{m === "Store Credit" ? `Store Credit (Mt ${selectedCustomer!.creditBalance})` : m}</option>
                     ))}
                   </select>
@@ -643,28 +652,13 @@ export default function POS() {
                     <input
                       type="number" min="0" step="1" placeholder="0"
                       value={entry.amount}
-                      onChange={(e) =>
-                        setPaymentEntries((prev) =>
-                          prev.map((p) => {
-                            if (p.id === entry.id) {
-                              let newAmount = e.target.value;
-                              if (p.method === "Store Credit" && selectedCustomer?.creditBalance) {
-                                if (Number(newAmount) > selectedCustomer.creditBalance) {
-                                  newAmount = selectedCustomer.creditBalance.toString();
-                                }
-                              }
-                              return { ...p, amount: newAmount };
-                            }
-                            return p;
-                          }),
-                        )
-                      }
+                      onChange={(e) => updateAmount(entry.id, e.target.value)}
                       className="w-full pl-9 pr-3 py-2 bg-surface-container border border-outline-variant/30 rounded-lg text-sm font-bold text-on-surface outline-none focus:border-primary transition-colors"
                     />
                   </div>
                   {paymentEntries.length > 1 && (
                     <button
-                      onClick={() => setPaymentEntries((prev) => prev.filter((p) => p.id !== entry.id))}
+                      onClick={() => removeEntry(entry.id)}
                       className="p-1.5 text-outline hover:text-error transition-colors flex-shrink-0"
                     >
                       <X size={14} />
@@ -675,12 +669,7 @@ export default function POS() {
             </AnimatePresence>
             {paymentEntries.length < 6 && (
               <button
-                onClick={() =>
-                  setPaymentEntries((prev) => [
-                    ...prev,
-                    { id: Date.now().toString(), method: "Cash", amount: "" },
-                  ])
-                }
+                onClick={addEntry}
                 className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:opacity-70 transition-opacity mt-1"
               >
                 <Plus size={12} /> ADD PAYMENT METHOD

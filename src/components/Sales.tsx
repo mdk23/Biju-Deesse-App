@@ -13,10 +13,12 @@ import { SalesCharts } from "./sales/SalesCharts";
 import { SalesTable } from "./sales/SalesTable";
 import { SaleDetailDrawer } from "./sales/SaleDetailDrawer";
 import { NewSaleDrawer } from "./sales/NewSaleDrawer";
+import { usePaymentEntries, getWalkInPaymentError } from "../hooks/usePaymentEntries";
 
 export default function Sales() {
   const createTransaction = useMutation(api.transactions.create);
   const removeTransaction = useMutation(api.transactions.remove);
+  const customers = useQuery(api.customers.list) || [];
 
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
   const [isAddingSale, setIsAddingSale] = useState(false);
@@ -36,10 +38,21 @@ export default function Sales() {
   const [saleForm, setSaleForm] = useState({
     customerId: undefined as string | undefined,
     items: [] as { productId: string; quantity: number; price: number; name: string }[],
-    paymentBreakdown: [{ method: "BCI", amount: 0 }],
     discount: 0,
     notes: "",
   });
+
+  const selectedCustomer = customers.find((c) => c._id === saleForm.customerId);
+  const {
+    paymentEntries,
+    paymentMethods,
+    amountReceived: totalPaid,
+    updateMethod,
+    updateAmount,
+    addEntry,
+    removeEntry,
+    reset: resetPaymentEntries,
+  } = usePaymentEntries(selectedCustomer);
 
   const saleTotals = useMemo(() => {
     const subtotal = saleForm.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -118,14 +131,15 @@ export default function Sales() {
         return;
       }
 
-      const totalPaid = saleForm.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0);
-      const remainingBalance = saleTotals.total - totalPaid;
-      const isCompleted = remainingBalance <= 0;
-
-      if (!saleForm.customerId && !isCompleted) {
-        toast.error("Walk-in transactions must be fully paid at checkout.");
+      const walkInError = getWalkInPaymentError(!!saleForm.customerId, totalPaid, saleTotals.total);
+      if (walkInError) {
+        toast.error(walkInError);
         return;
       }
+
+      const paymentBreakdown = paymentEntries
+        .filter((e) => parseFloat(e.amount) > 0)
+        .map((e) => ({ method: e.method, amount: parseFloat(e.amount) }));
 
       const result = await createTransaction({
         customerId: (saleForm.customerId ?? undefined) as any,
@@ -139,7 +153,7 @@ export default function Sales() {
         changeGiven: totalPaid > saleTotals.total ? totalPaid - saleTotals.total : 0,
         changeHandling: totalPaid > saleTotals.total ? "Cash" : undefined,
         deliveryStatus: "Pending",
-        paymentBreakdown: saleForm.paymentBreakdown,
+        paymentBreakdown,
         items: saleForm.items.map((it) => ({
           productId: it.productId as any,
           quantity: it.quantity,
@@ -155,10 +169,10 @@ export default function Sales() {
       setSaleForm({
         customerId: undefined,
         items: [],
-        paymentBreakdown: [{ method: "BCI", amount: 0 }],
         discount: 0,
         notes: "",
       });
+      resetPaymentEntries();
       toast.success(`Transaction Complete: ${receiptNumber}`);
     } catch (error: any) {
       const errorMessage = error.data || error.message || "Failed to process sale";
@@ -286,6 +300,14 @@ export default function Sales() {
             saleTotals={saleTotals}
             handleRegisterSale={handleRegisterSale}
             formatCurrency={formatCurrency}
+            selectedCustomer={selectedCustomer}
+            paymentEntries={paymentEntries}
+            paymentMethods={paymentMethods}
+            totalPaid={totalPaid}
+            updateMethod={updateMethod}
+            updateAmount={updateAmount}
+            addPaymentEntry={addEntry}
+            removePaymentEntry={removeEntry}
           />
         )}
       </AnimatePresence>

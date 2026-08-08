@@ -9,6 +9,7 @@ import {
   MoreVertical,
   ChevronRight,
 } from "lucide-react";
+import { CustomerBalanceBadge } from "./CustomerBalanceBadge";
 
 interface Customer {
   _id: string;
@@ -200,29 +201,12 @@ export const CustomerTable = ({
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <div className="flex flex-col gap-0.5">
-                      {(customer.debitBalance || 0) > 0 ? (
-                        <>
-                          <span className="font-data-tabular text-sm text-error font-bold">
-                            Owes {formatCurrency(customer.debitBalance || 0)}
-                          </span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-error">
-                            DEBIT
-                          </span>
-                        </>
-                      ) : (customer.creditBalance || 0) > 0 ? (
-                        <>
-                          <span className="font-data-tabular text-sm text-emerald-600 font-bold">
-                            {formatCurrency(customer.creditBalance || 0)}
-                          </span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600">
-                            STORE CREDIT
-                          </span>
-                        </>
-                      ) : (
-                        <span className="font-data-tabular text-sm text-outline opacity-50">No balance</span>
-                      )}
-                    </div>
+                    <CustomerBalanceBadge
+                      creditBalance={customer.creditBalance}
+                      debitBalance={customer.debitBalance}
+                      formatCurrency={formatCurrency}
+                      variant="compact"
+                    />
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1">

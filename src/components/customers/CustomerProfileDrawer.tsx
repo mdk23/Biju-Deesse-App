@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { X, ShoppingBag, Users } from "lucide-react";
+import { CustomerBalanceBadge } from "./CustomerBalanceBadge";
 
 interface Customer {
   _id: string;
@@ -189,61 +190,12 @@ export const CustomerProfileDrawer = ({
                     : "No Purchases"}
                 </p>
               </div>
-              <div
-                className={`col-span-2 p-4 rounded-2xl border flex justify-between items-center ${
-                  (selectedCustomer.debitBalance || 0) > 0
-                    ? "bg-error/5 border-error/10"
-                    : (selectedCustomer.creditBalance || 0) > 0
-                      ? "bg-primary/5 border-primary/10"
-                      : "bg-emerald-50 border-emerald-100"
-                }`}
-              >
-                <div>
-                  <p
-                    className={`font-label-caps text-[9px] mb-1 ${
-                      (selectedCustomer.debitBalance || 0) > 0
-                        ? "text-error"
-                        : (selectedCustomer.creditBalance || 0) > 0
-                          ? "text-primary"
-                          : "text-emerald-700"
-                    }`}
-                  >
-                    CREDIT STATUS
-                  </p>
-                  <p
-                    className={`font-headline-md text-xl font-bold ${
-                      (selectedCustomer.debitBalance || 0) > 0
-                        ? "text-error"
-                        : (selectedCustomer.creditBalance || 0) > 0
-                          ? "text-primary"
-                          : "text-emerald-700"
-                    }`}
-                  >
-                    {(selectedCustomer.debitBalance || 0) > 0
-                      ? formatCurrency(selectedCustomer.debitBalance!)
-                      : (selectedCustomer.creditBalance || 0) > 0
-                        ? formatCurrency(selectedCustomer.creditBalance!)
-                        : formatCurrency(0)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span
-                    className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                      (selectedCustomer.debitBalance || 0) > 0
-                        ? "bg-rose-100 text-rose-700"
-                        : (selectedCustomer.creditBalance || 0) > 0
-                          ? "bg-indigo-100 text-indigo-700"
-                          : "bg-emerald-100 text-emerald-700"
-                    }`}
-                  >
-                    {(selectedCustomer.debitBalance || 0) > 0
-                      ? "OUTSTANDING DEBT"
-                      : (selectedCustomer.creditBalance || 0) > 0
-                        ? "STORE CREDIT"
-                        : "GOOD STANDING"}
-                  </span>
-                </div>
-              </div>
+              <CustomerBalanceBadge
+                creditBalance={selectedCustomer.creditBalance}
+                debitBalance={selectedCustomer.debitBalance}
+                formatCurrency={formatCurrency}
+                variant="card"
+              />
             </div>
           </section>
 

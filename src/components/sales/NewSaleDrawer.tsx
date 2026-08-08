@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, CheckCircle2, Trash2, Plus } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { CustomerBalanceBadge } from "../customers/CustomerBalanceBadge";
+import { PaymentEntry } from "../../hooks/usePaymentEntries";
 
 interface Product {
   _id: string;
@@ -20,6 +22,8 @@ interface Customer {
   lastName: string;
   financialTier?: string;
   loyaltyLevel?: string;
+  creditBalance?: number;
+  debitBalance?: number;
 }
 
 interface NewSaleDrawerProps {
@@ -31,7 +35,6 @@ interface NewSaleDrawerProps {
   saleForm: {
     customerId: string | undefined;
     items: { productId: string; quantity: number; price: number; name: string }[];
-    paymentBreakdown: { method: string; amount: number }[];
     discount: number;
     notes: string;
   };
@@ -39,6 +42,14 @@ interface NewSaleDrawerProps {
   saleTotals: { subtotal: number; total: number };
   handleRegisterSale: () => void;
   formatCurrency: (v: number) => string;
+  selectedCustomer: Customer | undefined;
+  paymentEntries: PaymentEntry[];
+  paymentMethods: string[];
+  totalPaid: number;
+  updateMethod: (id: string, method: string) => void;
+  updateAmount: (id: string, amount: string) => void;
+  addPaymentEntry: () => void;
+  removePaymentEntry: (id: string) => void;
 }
 
 export const NewSaleDrawer = ({
@@ -52,6 +63,14 @@ export const NewSaleDrawer = ({
   saleTotals,
   handleRegisterSale,
   formatCurrency,
+  selectedCustomer,
+  paymentEntries,
+  paymentMethods,
+  totalPaid,
+  updateMethod,
+  updateAmount,
+  addPaymentEntry,
+  removePaymentEntry,
 }: NewSaleDrawerProps) => {
   const customers = (useQuery(api.customers.list) || []) as Customer[];
   const products = (useQuery(api.products.list, { archived: false }) || []) as Product[];
@@ -136,6 +155,16 @@ export const NewSaleDrawer = ({
                       </option>
                     ))}
                   </select>
+                  {selectedCustomer && (
+                    <div className="mt-3">
+                      <CustomerBalanceBadge
+                        creditBalance={selectedCustomer.creditBalance}
+                        debitBalance={selectedCustomer.debitBalance}
+                        formatCurrency={formatCurrency}
+                        variant="compact"
+                      />
+                    </div>
+                  )}
                 </section>
 
                 {/* Items Selection */}
@@ -246,56 +275,35 @@ export const NewSaleDrawer = ({
                   </label>
 
                   <div className="space-y-4">
-                    {saleForm.paymentBreakdown.map((pay, idx) => (
+                    {paymentEntries.map((entry) => (
                       <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        key={idx}
+                        key={entry.id}
                         className="flex gap-4 items-center"
                       >
                         <select
                           className="flex-1 p-4 bg-white/40 border border-white/60 rounded-2xl text-xs font-bold"
-                          value={pay.method}
-                          onChange={(e) =>
-                            setSaleForm({
-                              ...saleForm,
-                              paymentBreakdown: saleForm.paymentBreakdown.map((p, i) =>
-                                i === idx ? { ...p, method: e.target.value } : p
-                              ),
-                            })
-                          }
+                          value={entry.method}
+                          onChange={(e) => updateMethod(entry.id, e.target.value)}
                         >
-                          <option>Cash</option>
-                          <option>M-Pesa</option>
-                          <option>e-Mola</option>
-                          <option>BCI</option>
-                          <option>BIM</option>
-                          <option>Bank Transfer</option>
-                          <option>Card</option>
+                          {paymentMethods.map((m) => (
+                            <option key={m} value={m}>
+                              {m === "Store Credit" ? `Store Credit (Mt ${selectedCustomer!.creditBalance})` : m}
+                            </option>
+                          ))}
                         </select>
                         <input
                           type="number"
                           placeholder="Amount"
-                          value={pay.amount}
-                          onChange={(e) =>
-                            setSaleForm({
-                              ...saleForm,
-                              paymentBreakdown: saleForm.paymentBreakdown.map((p, i) =>
-                                i === idx ? { ...p, amount: parseFloat(e.target.value) || 0 } : p
-                              ),
-                            })
-                          }
+                          value={entry.amount}
+                          onChange={(e) => updateAmount(entry.id, e.target.value)}
                           className="flex-1 p-4 bg-white/40 border border-white/60 rounded-2xl font-data-tabular text-sm"
                         />
-                        {saleForm.paymentBreakdown.length > 1 && (
+                        {paymentEntries.length > 1 && (
                           <button
                             type="button"
-                            onClick={() =>
-                              setSaleForm({
-                                ...saleForm,
-                                paymentBreakdown: saleForm.paymentBreakdown.filter((_, i) => i !== idx),
-                              })
-                            }
+                            onClick={() => removePaymentEntry(entry.id)}
                             className="p-2 text-outline/40 hover:text-error transition-colors"
                           >
                             <Trash2 size={16} />
@@ -307,12 +315,7 @@ export const NewSaleDrawer = ({
                     <div className="flex justify-between items-center px-2">
                       <button
                         type="button"
-                        onClick={() =>
-                          setSaleForm({
-                            ...saleForm,
-                            paymentBreakdown: [...saleForm.paymentBreakdown, { method: "BCI", amount: 0 }],
-                          })
-                        }
+                        onClick={addPaymentEntry}
                         className="text-xs font-label-caps text-primary hover:underline flex items-center gap-1"
                       >
                         <Plus size={14} /> ADD PAYMENT METHOD
@@ -322,12 +325,10 @@ export const NewSaleDrawer = ({
                         <p className="font-label-caps text-[9px] text-outline">REMAINING</p>
                         <p
                           className={`font-data-tabular font-bold ${
-                            saleTotals.total - saleForm.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0) > 0
-                              ? "text-error"
-                              : "text-secondary"
+                            saleTotals.total - totalPaid > 0 ? "text-error" : "text-secondary"
                           }`}
                         >
-                          {formatCurrency(saleTotals.total - saleForm.paymentBreakdown.reduce((acc, p) => acc + p.amount, 0))}
+                          {formatCurrency(saleTotals.total - totalPaid)}
                         </p>
                       </div>
                     </div>

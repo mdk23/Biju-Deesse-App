@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
-import { reconcileBalances, applyCustomerLedger } from "./ledgerHelpers";
+import { applyLedgerEntry, LedgerEntryType, recomputeCustomerBalanceForCustomer } from "./ledgerHelpers";
 import { processCashPayment, validateCaixaForCash, getActiveCaixaSession, resolveCaixaSession } from "./caixaHelpers";
 import { updateDailyMovementStats } from "./utils";
 import { requireUser } from "./authHelpers";
@@ -228,12 +228,13 @@ export const create = mutation({
       throw new Error("Change handling method is required for overpayments.");
     }
 
-    // 2. Fetch Customer and Update Balances
+    // 2. Fetch Customer (balance is folded once, at the end, from a single
+    // in-memory `balance` accumulator -- see the fold below. This is the
+    // only place in `create` that touches creditBalance/debitBalance.)
     let customer = null;
-    let newCreditBalance = 0;
-    let newDebitBalance = 0;
     let customerName = "Walk-in";
     let customerTier = "Regular";
+    let balance = { creditBalance: 0, debitBalance: 0 };
 
     let isNewCustomer = 0;
     let isReturningCustomer = 0;
@@ -242,47 +243,21 @@ export const create = mutation({
     let debtCreatedToday = 0;
     let debtRecoveredToday = 0;
 
+    const storeCreditUsed = args.paymentBreakdown
+      .filter(p => p.method === "Store Credit")
+      .reduce((sum, p) => sum + p.amount, 0);
+
     if (args.customerId) {
       customer = await ctx.db.get(args.customerId);
       if (!customer) throw new Error("Customer not found");
 
       customerName = `${customer.firstName} ${customer.lastName}`;
       customerTier = customer.financialTier || "Regular";
-      newCreditBalance = customer.creditBalance || 0;
-      newDebitBalance = customer.debitBalance || 0;
+      balance = { creditBalance: customer.creditBalance || 0, debitBalance: customer.debitBalance || 0 };
 
-      const storeCreditUsed = args.paymentBreakdown
-        .filter(p => p.method === "Store Credit")
-        .reduce((sum, p) => sum + p.amount, 0);
-
-      if (storeCreditUsed > 0) {
-        if (newCreditBalance >= storeCreditUsed) {
-          newCreditBalance -= storeCreditUsed;
-        } else {
-          throw new ConvexError("Insufficient store credit to cover payment amount.");
-        }
+      if (storeCreditUsed > 0 && balance.creditBalance < storeCreditUsed) {
+        throw new ConvexError("Insufficient store credit to cover payment amount.");
       }
-
-      if (isOverpayment && args.changeHandling === "Store Credit") {
-        const reconciled = reconcileBalances(newCreditBalance, newDebitBalance, change);
-        newCreditBalance = reconciled.creditBalance;
-        newDebitBalance = reconciled.debitBalance;
-      } else if (isUnderpayment) {
-        const reconciled = reconcileBalances(newCreditBalance, newDebitBalance, change); // change is negative
-        newCreditBalance = reconciled.creditBalance;
-        newDebitBalance = reconciled.debitBalance;
-      }
-
-      await ctx.db.patch(args.customerId, {
-        creditBalance: newCreditBalance,
-        debitBalance: newDebitBalance,
-      });
-
-      const oldCredit = customer.creditBalance || 0;
-      const oldDebt = customer.debitBalance || 0;
-      const diffCredit = newCreditBalance - oldCredit;
-      const diffDebt = newDebitBalance - oldDebt;
-      const recoveredDebt = oldDebt > newDebitBalance ? oldDebt - newDebitBalance : 0;
 
       if ((customer.orderCount || 0) === 0) {
         isNewCustomer = 1;
@@ -297,14 +272,6 @@ export const create = mutation({
       if (isUnderpayment) {
         debtCreatedToday = Math.abs(change);
       }
-      debtRecoveredToday = recoveredDebt;
-
-      await updateFinancialCountersHelper(ctx, {
-        diffCredit,
-        diffDebt,
-        recoveredDebt,
-        creditUsed: storeCreditUsed,
-      });
     }
 
     // Prepare denormalized items
@@ -345,35 +312,39 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    // First adjust by store credit used (withdrawal from customer credit)
-    const storeCreditUsed = args.paymentBreakdown
-      .filter(p => p.method === "Store Credit")
-      .reduce((sum, p) => sum + p.amount, 0);
+    // 4-6. Fold every balance-affecting event onto the single in-memory
+    // `balance` accumulator and log one ledger row per event, then patch
+    // the customer's cached balance exactly once at the end. This is the
+    // fix for the historical double-application bug: each ledger row used
+    // to also independently re-derive and re-patch the balance via
+    // applyCustomerLedger, so audit-log entries silently mutated the
+    // balance a second (or third) time on top of this same fold.
+    const foldAndLog = async (type: LedgerEntryType, amount: number, description: string, referenceId: string, referenceType: string) => {
+      balance = applyLedgerEntry(balance, { type, amount });
+      if (args.customerId) {
+        await ctx.db.insert("ledger", {
+          customerId: args.customerId,
+          sessionId: session._id,
+          type,
+          amount,
+          balanceAfter: { credit: balance.creditBalance, debit: balance.debitBalance },
+          referenceId,
+          referenceType,
+          description,
+          createdAt: now,
+        });
+      }
+    };
 
     if (args.customerId && storeCreditUsed > 0) {
-      await applyCustomerLedger(ctx.db, args.customerId, {
-        type: "USE_CREDIT",
-        amount: storeCreditUsed,
-        description: `Used store credit for ${finalReceiptNumber}`,
-        referenceId: transactionId,
-        referenceType: "transaction",
-        sessionId: session._id,
-      });
+      await foldAndLog("USE_CREDIT", storeCreditUsed, `Used store credit for ${finalReceiptNumber}`, transactionId, "transaction");
     }
 
-    // A. Ledger: SALE
     if (args.customerId) {
-      await applyCustomerLedger(ctx.db, args.customerId, {
-        type: "SALE",
-        amount: args.total,
-        description: `Sale ${finalReceiptNumber}`,
-        referenceId: transactionId,
-        referenceType: "transaction",
-        sessionId: session._id,
-      });
+      await foldAndLog("SALE", args.total, `Sale ${finalReceiptNumber}`, transactionId, "transaction");
     }
 
-    // 5. Ledger & Payments: PAYMENT
+    // Payments: PAYMENT_LOG (balance-neutral checkout audit trail)
     for (const pay of args.paymentBreakdown) {
       const paymentId = await ctx.db.insert("payments", {
         transactionId,
@@ -388,18 +359,11 @@ export const create = mutation({
       });
 
       if (args.customerId) {
-        await applyCustomerLedger(ctx.db, args.customerId, {
-          type: "PAYMENT",
-          amount: pay.amount,
-          description: `Payment via ${pay.method} for ${finalReceiptNumber}`,
-          referenceId: paymentId,
-          referenceType: "payment",
-          sessionId: session._id,
-        });
+        await foldAndLog("PAYMENT_LOG", pay.amount, `Payment via ${pay.method} for ${finalReceiptNumber}`, paymentId, "payment");
       }
     }
 
-    // 5.5. Caixa Movement
+    // Caixa Movement
     if (cashPayment && cashPayment.amount > 0) {
       let netCash = cashPayment.amount;
       if (isOverpayment && args.changeHandling === "Cash") {
@@ -417,28 +381,43 @@ export const create = mutation({
       });
     }
 
-    // 6. Ledger: Change Handling (REFUND or CREDIT) / Underpayment (DEBIT)
+    // Change Handling (REFUND or CREDIT) / Underpayment (DEBIT)
     if (args.customerId) {
       if (isOverpayment) {
-        const changeType = args.changeHandling === "Store Credit" ? "CREDIT" : "REFUND";
-        await applyCustomerLedger(ctx.db, args.customerId, {
-          type: changeType,
-          amount: change,
-          description: `${changeType === "CREDIT" ? "Store Credit" : "Change Refund"} for ${finalReceiptNumber}`,
-          referenceId: transactionId,
-          referenceType: "transaction",
-          sessionId: session._id,
-        });
+        const changeType: LedgerEntryType = args.changeHandling === "Store Credit" ? "CREDIT" : "REFUND";
+        await foldAndLog(
+          changeType,
+          change,
+          `${changeType === "CREDIT" ? "Store Credit" : "Change Refund"} for ${finalReceiptNumber}`,
+          transactionId,
+          "transaction"
+        );
       } else if (isUnderpayment) {
-        await applyCustomerLedger(ctx.db, args.customerId, {
-          type: "DEBIT",
-          amount: Math.abs(change),
-          description: `Outstanding balance for ${finalReceiptNumber}`,
-          referenceId: transactionId,
-          referenceType: "transaction",
-          sessionId: session._id,
-        });
+        await foldAndLog("DEBIT", Math.abs(change), `Outstanding balance for ${finalReceiptNumber}`, transactionId, "transaction");
       }
+    }
+
+    // Single patch of the customer's cached balance, and financial counters
+    // derived from the fold's net effect (not from any intermediate step).
+    if (args.customerId && customer) {
+      await ctx.db.patch(args.customerId, {
+        creditBalance: balance.creditBalance,
+        debitBalance: balance.debitBalance,
+      });
+
+      const oldCredit = customer.creditBalance || 0;
+      const oldDebt = customer.debitBalance || 0;
+      const diffCredit = balance.creditBalance - oldCredit;
+      const diffDebt = balance.debitBalance - oldDebt;
+      const recoveredDebt = oldDebt > balance.debitBalance ? oldDebt - balance.debitBalance : 0;
+      debtRecoveredToday = recoveredDebt;
+
+      await updateFinancialCountersHelper(ctx, {
+        diffCredit,
+        diffDebt,
+        recoveredDebt,
+        creditUsed: storeCreditUsed,
+      });
     }
 
     // Fetch all products involved in this transaction in a single parallel call
@@ -722,41 +701,14 @@ export const remove = mutation({
       await ctx.db.delete(payment._id);
     }
 
-    // 4. Revert Customer Balances & Delete Ledger Entries
+    // 4. Delete Ledger Entries tied to this transaction or its payments,
+    // then revert the customer's cached balance via a full replay of
+    // whatever ledger history remains. Deletion is mathematically
+    // non-invertible via a hand-computed delta (credit/debt net
+    // nonlinearly through reconcileBalances), so a full replay is the
+    // only generally-correct reversal -- and it's guaranteed consistent
+    // with `create` by construction, since both use the same reducer.
     if (transaction.customerId) {
-      const customer = await ctx.db.get(transaction.customerId);
-      if (customer) {
-        let creditBalance = customer.creditBalance || 0;
-        let debitBalance = customer.debitBalance || 0;
-
-        const amountReceived = transaction.amountReceived || 0;
-        const change = amountReceived - transaction.total;
-
-        let applyAsDebt = 0;
-        let applyAsCredit = 0;
-
-        if (change > 0 && transaction.changeHandling === "Store Credit") {
-          applyAsDebt += change;
-        } else if (change < 0) {
-          applyAsCredit += Math.abs(change);
-        }
-
-        const storeCreditUsed = payments
-          .filter((p) => p.paymentMethod === "Store Credit")
-          .reduce((sum, p) => sum + p.amount, 0);
-
-        applyAsCredit += storeCreditUsed;
-
-        const reconciledDebt = reconcileBalances(creditBalance, debitBalance, -applyAsDebt);
-        const finalReconciled = reconcileBalances(reconciledDebt.creditBalance, reconciledDebt.debitBalance, applyAsCredit);
-
-        await ctx.db.patch(transaction.customerId, {
-          creditBalance: Math.max(0, finalReconciled.creditBalance),
-          debitBalance: Math.max(0, finalReconciled.debitBalance)
-        });
-      }
-
-      // Delete Ledger Entries tied to this transaction or its payments
       const customerLedgers = await ctx.db
         .query("ledger")
         .withIndex("by_customer", (q) => q.eq("customerId", transaction.customerId))
@@ -767,6 +719,8 @@ export const remove = mutation({
           await ctx.db.delete(entry._id);
         }
       }
+
+      await recomputeCustomerBalanceForCustomer(ctx.db, transaction.customerId);
     }
 
     // 6. Caixa SALE_REVERSAL
