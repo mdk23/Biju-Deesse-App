@@ -278,6 +278,8 @@ export default function Dashboard() {
               <thead>
                 <tr className="bg-primary/5 font-label-caps text-[10px] text-primary/70">
                   <th className="px-8 py-4">RECEIPT</th>
+                  <th className="px-6 py-4">CUSTOMER</th>
+                  <th className="px-6 py-4">METHOD</th>
                   <th className="px-6 py-4">CASHIER</th>
                   <th className="px-6 py-4">STATUS</th>
                   <th className="px-8 py-4 text-right">TOTAL</th>
@@ -287,6 +289,8 @@ export default function Dashboard() {
                 {(filteredRecentTransactions || []).slice(0, 5).map((tx) => (
                   <tr key={tx._id} className="hover:bg-white/40 transition-colors group cursor-pointer">
                     <td className="px-8 py-5 font-data-tabular text-xs font-bold text-primary">{tx.receiptNumber}</td>
+                    <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.customerName || "Walk-in"}</td>
+                    <td className="px-6 py-5 font-body-md text-xs text-on-surface-variant">{tx.paymentMethod}</td>
                     <td className="px-6 py-5 font-body-md text-sm text-on-surface">{tx.cashierName}</td>
                     <td className="px-6 py-5">
                       <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${tx.status === 'Completed' ? 'bg-secondary-container/20 text-secondary' :

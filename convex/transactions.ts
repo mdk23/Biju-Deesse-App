@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
 import { normalizePaymentMethod } from "./utils";
-import { applyLedgerEntry, LedgerEntryType, recomputeCustomerBalanceForCustomer } from "./ledgerHelpers";
+import { applyLedgerEntry, applyCustomerLedger, LedgerEntryType, recomputeCustomerBalanceForCustomer } from "./ledgerHelpers";
 import { processCashPayment, validateCaixaForCash, getActiveCaixaSession, resolveCaixaSession } from "./caixaHelpers";
 import { updateDailyMovementStats } from "./utils";
 import { requireUser } from "./authHelpers";
@@ -65,13 +65,33 @@ async function hydrateTransactions(ctx: any, transactions: any[]) {
     )
   );
 
-  const [customers, products] = await Promise.all([
+  const [customers, products, paymentsByCustomer] = await Promise.all([
     Promise.all(customerIds.map((id) => ctx.db.get(id))),
     Promise.all(productIds.map((id) => ctx.db.get(id))),
+    Promise.all(
+      customerIds.map((id) =>
+        ctx.db.query("payments").withIndex("by_customer", (q: any) => q.eq("customerId", id)).collect()
+      )
+    ),
   ]);
 
   const customerMap = new Map(customers.filter(Boolean).map((c: any) => [c._id, c]));
   const productMap = new Map(products.filter(Boolean).map((p: any) => [p._id, p]));
+
+  // Outstanding balance must be derived from the sale's own `payments` rows
+  // (the single source of truth for what's been settled), never from the
+  // frozen checkout-time `paymentBreakdown` snapshot -- addPayment/
+  // recordSalePayment insert into `payments` but never touch that snapshot.
+  const paidByTxId = new Map<string, number>();
+  const methodsByTxId = new Map<string, string[]>();
+  for (const list of paymentsByCustomer) {
+    for (const p of list) {
+      paidByTxId.set(p.transactionId, (paidByTxId.get(p.transactionId) || 0) + p.amount);
+      const methods = methodsByTxId.get(p.transactionId) || [];
+      methods.push(p.paymentMethod);
+      methodsByTxId.set(p.transactionId, methods);
+    }
+  }
 
   return transactions.map((tx) => {
     let customerName = tx.customerName;
@@ -93,8 +113,22 @@ async function hydrateTransactions(ctx: any, transactions: any[]) {
       };
     });
 
-    const totalPaid = (tx.paymentBreakdown || []).reduce((acc: number, p: any) => acc + p.amount, 0);
+    // Walk-ins must be fully settled at checkout (see the guard in `create`),
+    // so amountReceived is always accurate for them; customer-linked sales
+    // can receive payments after checkout, so their true paid amount is the
+    // live sum of their own `payments` rows.
+    const totalPaid = tx.customerId ? (paidByTxId.get(tx._id) || 0) : (tx.amountReceived || 0);
     const balance = Math.max(0, tx.total - totalPaid);
+
+    // Same "derive from live payments, not the frozen checkout snapshot"
+    // rule applies to the displayed method: a sale settled later via
+    // Record Payment (any method, incl. Store Credit) must show that, not
+    // whatever (or nothing) was on paymentBreakdown at checkout time.
+    const liveMethods = tx.customerId
+      ? methodsByTxId.get(tx._id) || []
+      : (tx.paymentBreakdown || []).map((p: any) => p.method);
+    const paymentMethod =
+      liveMethods.length === 0 ? "Pending" : liveMethods.length === 1 ? liveMethods[0] : "Split";
 
     return {
       ...tx,
@@ -103,7 +137,7 @@ async function hydrateTransactions(ctx: any, transactions: any[]) {
       customerTier: customerTier || "Regular",
       paymentStatus: balance === 0 ? "Paid" : totalPaid > 0 ? "Partial" : "Pending",
       balance,
-      paymentMethod: tx.paymentBreakdown?.length === 1 ? tx.paymentBreakdown[0].method : "Split",
+      paymentMethod,
     };
   });
 }
@@ -167,6 +201,7 @@ export const create = mutation({
     amountReceived: v.number(),
     changeGiven: v.number(),
     changeHandling: v.optional(v.string()),
+    addRemainingToAccount: v.optional(v.boolean()),
     deliveryStatus: v.string(), // "Pending", "Shipped", "Delivered"
     paymentBreakdown: v.array(
       v.object({
@@ -269,7 +304,7 @@ export const create = mutation({
       if (isOverpayment && args.changeHandling === "Store Credit") {
         creditIssuedToday = change;
       }
-      if (isUnderpayment) {
+      if (isUnderpayment && args.addRemainingToAccount) {
         debtCreatedToday = Math.abs(change);
       }
     }
@@ -304,6 +339,7 @@ export const create = mutation({
       amountReceived: args.amountReceived,
       changeGiven: isOverpayment ? change : 0,
       changeHandling: isOverpayment ? args.changeHandling : undefined,
+      debtAddedToAccount: !!(args.customerId && isUnderpayment && args.addRemainingToAccount),
       notes: args.notes,
       customerName,
       customerTier,
@@ -354,6 +390,7 @@ export const create = mutation({
         paymentMethod: pay.method,
         paymentDate: now,
         status: "Completed",
+        source: "checkout",
         createdAt: now,
         updatedAt: now,
       });
@@ -392,7 +429,7 @@ export const create = mutation({
           transactionId,
           "transaction"
         );
-      } else if (isUnderpayment) {
+      } else if (isUnderpayment && args.addRemainingToAccount) {
         await foldAndLog("DEBIT", Math.abs(change), `Outstanding balance for ${finalReceiptNumber}`, transactionId, "transaction");
       }
     }
@@ -596,6 +633,57 @@ export const create = mutation({
   },
 });
 
+// Post-hoc explicit opt-in: convert a still-pending sale's live outstanding
+// balance into real customer account debt. Mutually exclusive with
+// payments.recordSalePayment (both gate on the same debtAddedToAccount
+// flag, in opposite directions) -- mirrors the checkout-time "Add Remaining
+// Balance to Customer Account" checkbox for a cashier who decides later.
+export const addRemainingToCustomerAccount = mutation({
+  args: { transactionId: v.id("transactions") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx.db, ctx);
+    if (user.role !== "admin" && user.role !== "manager") {
+      throw new Error("Unauthorized. Only admins and managers can add a balance to a customer's account.");
+    }
+
+    const transaction = await ctx.db.get(args.transactionId);
+    if (!transaction) throw new Error("Transaction not found.");
+    if (!transaction.customerId) {
+      throw new Error("This sale has no linked customer account.");
+    }
+    if (transaction.debtAddedToAccount) {
+      throw new Error("This sale's balance has already been added to the customer's account.");
+    }
+
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_transaction", (q) => q.eq("transactionId", args.transactionId))
+      .collect();
+    const alreadyPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    const outstanding = transaction.total - alreadyPaid;
+    if (outstanding <= 0) {
+      throw new Error("This sale has no outstanding balance to add to the account.");
+    }
+
+    await applyCustomerLedger(ctx.db, transaction.customerId, {
+      type: "DEBIT",
+      amount: outstanding,
+      description: `Outstanding balance for ${transaction.receiptNumber || args.transactionId} added to account`,
+      referenceId: args.transactionId,
+      referenceType: "transaction",
+    });
+
+    await ctx.db.patch(args.transactionId, { debtAddedToAccount: true, updatedAt: Date.now() });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    await updateFinancialStats(ctx, { dateStr: todayStr, debtCreatedDelta: outstanding });
+
+    await recomputeCustomerIntelligence(ctx.db, transaction.customerId);
+
+    return { outstanding };
+  },
+});
+
 // Analytics: Revenue & Profit
 export const getAnalytics = query({
   handler: async (ctx) => {
@@ -703,11 +791,11 @@ export const remove = mutation({
 
     // 4. Delete Ledger Entries tied to this transaction or its payments,
     // then revert the customer's cached balance via a full replay of
-    // whatever ledger history remains. Deletion is mathematically
-    // non-invertible via a hand-computed delta (credit/debt net
-    // nonlinearly through reconcileBalances), so a full replay is the
-    // only generally-correct reversal -- and it's guaranteed consistent
-    // with `create` by construction, since both use the same reducer.
+    // whatever ledger history remains. Deletion is not soundly invertible
+    // via a hand-computed delta (USE_CREDIT/PAYMENT floor at 0, a
+    // non-linear clamp), so a full replay is the only generally-correct
+    // reversal -- and it's guaranteed consistent with `create` by
+    // construction, since both use the same reducer.
     if (transaction.customerId) {
       const customerLedgers = await ctx.db
         .query("ledger")
@@ -723,26 +811,54 @@ export const remove = mutation({
       await recomputeCustomerBalanceForCustomer(ctx.db, transaction.customerId);
     }
 
-    // 6. Caixa SALE_REVERSAL
-    const cashPayment = transaction.paymentBreakdown.find((p: any) => p.method.toLowerCase() === "cash");
-    if (cashPayment && cashPayment.amount > 0) {
-      let netCash = cashPayment.amount;
-      const amountReceived = transaction.amountReceived || 0;
-      const change = amountReceived - transaction.total;
-      const isOverpayment = change > 0;
-      if (isOverpayment && transaction.changeHandling === "Cash") {
-        netCash -= change;
-      }
+    // 6. Caixa reversal -- reverse exactly the caixaMovements that were
+    // actually recorded for this transaction (checkout-time cash) and for
+    // each of its now-deleted payments (any cash collected after checkout
+    // via addPayment/recordSalePayment). Deriving the reversal from what
+    // actually happened, rather than recomputing from
+    // paymentBreakdown/changeHandling, is what makes this correct for
+    // post-checkout cash too -- paymentBreakdown only ever reflected the
+    // checkout-time snapshot, so it silently missed any cash collected later.
+    const [transactionCashMovements, ...paymentCashMovementBatches] = await Promise.all([
+      ctx.db
+        .query("caixaMovements")
+        .withIndex("by_reference", (q) => q.eq("referenceType", "transaction").eq("referenceId", args.id))
+        .collect(),
+      ...paymentIds.map((paymentId) =>
+        ctx.db
+          .query("caixaMovements")
+          .withIndex("by_reference", (q) => q.eq("referenceType", "payment").eq("referenceId", paymentId))
+          .collect()
+      ),
+    ]);
 
-      await processCashPayment(ctx.db, {
-        amount: netCash,
-        type: "SALE_REVERSAL",
-        description: `Reversal of cash sale for ${transaction.receiptNumber}`,
-        userId: user.username,
-        timestamp: Date.now(),
-        referenceId: transaction._id,
-        referenceType: "transaction",
-      });
+    for (const m of transactionCashMovements) {
+      if (m.type === "SALE" && m.amount > 0) {
+        await processCashPayment(ctx.db, {
+          amount: m.amount,
+          type: "SALE_REVERSAL",
+          description: `Reversal of cash sale for ${transaction.receiptNumber}`,
+          userId: user.username,
+          timestamp: Date.now(),
+          referenceId: transaction._id,
+          referenceType: "transaction",
+        });
+      }
+    }
+    for (const paymentMovements of paymentCashMovementBatches) {
+      for (const m of paymentMovements) {
+        if (m.type === "CASH_IN" && m.amount > 0) {
+          await processCashPayment(ctx.db, {
+            amount: m.amount,
+            type: "CASH_OUT",
+            description: `Reversal of cash payment for ${transaction.receiptNumber} (transaction deleted)`,
+            userId: user.username,
+            timestamp: Date.now(),
+            referenceId: transaction._id,
+            referenceType: "transaction",
+          });
+        }
+      }
     }
 
     // 5. Delete Transaction

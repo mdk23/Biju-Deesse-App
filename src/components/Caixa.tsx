@@ -47,6 +47,16 @@ export default function Caixa() {
   const [isClosing, setIsClosing] = useState(false);
   const [countedCash, setCountedCash] = useState('');
   const [closingNote, setClosingNote] = useState('');
+  const [reviewedChannels, setReviewedChannels] = useState<Record<string, boolean>>({});
+
+  const closingSessionDetails = useQuery(
+    api.caixa.getSessionReportDetails,
+    isClosing && activeSession ? { sessionId: activeSession._id as Id<"caixaSessions"> } : "skip"
+  );
+  const paymentsByMethod = closingSessionDetails?.summary.paymentsByMethod || {};
+  const channels = Object.keys(paymentsByMethod);
+  const allChannelsReviewed =
+    closingSessionDetails !== undefined && channels.every((m) => reviewedChannels[m]);
 
   const [isAddingMovement, setIsAddingMovement] = useState(false);
   const [movementType, setMovementType] = useState('CASH_IN');
@@ -82,6 +92,7 @@ export default function Caixa() {
     e.preventDefault();
     if (!activeSession) return;
     if (!countedCash || isNaN(Number(countedCash))) return toast.error("Invalid counted amount");
+    if (!allChannelsReviewed) return toast.error("Please review every payment channel before closing.");
 
     const variance = Number(countedCash) - activeSession.expectedCash;
     if (Math.abs(variance) > 5 && !closingNote) {
@@ -98,6 +109,7 @@ export default function Caixa() {
       setIsClosing(false);
       setCountedCash('');
       setClosingNote('');
+      setReviewedChannels({});
     } catch (error: any) {
       toast.error(error.message || "Failed to close session.");
     }
@@ -406,13 +418,74 @@ export default function Caixa() {
 
         {isClosing && activeSession && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface/80 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl border border-primary/10">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-lg bg-white rounded-3xl p-8 shadow-2xl border border-primary/10 max-h-[90vh] overflow-y-auto">
               <h3 className="text-2xl font-headline-md text-primary mb-2 flex items-center gap-2"><Lock size={20}/> Close Caixa</h3>
-              <p className="text-sm text-outline mb-6">Enter the physical cash count to close the register and calculate variance.</p>
-              
+              <p className="text-sm text-outline mb-6">Review what was received on every channel, then enter the physical cash count to close the register.</p>
+
+              <div className="mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-[10px] font-label-caps text-outline">RECEIVED BY CHANNEL — CHECK OFF EACH ONE</p>
+                  {channels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReviewedChannels(
+                          allChannelsReviewed ? {} : Object.fromEntries(channels.map((m) => [m, true]))
+                        )
+                      }
+                      className="text-[10px] font-label-caps text-primary hover:underline"
+                    >
+                      {allChannelsReviewed ? "CLEAR ALL" : "CHECK ALL"}
+                    </button>
+                  )}
+                </div>
+                {closingSessionDetails === undefined ? (
+                  <div className="p-4 text-center text-xs text-outline">Loading breakdown...</div>
+                ) : channels.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-surface border border-primary/10 text-center text-xs text-outline">
+                    No payments recorded in this session yet.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-primary/10 divide-y divide-primary/5 overflow-hidden">
+                    {channels.map((method) => {
+                      const checked = !!reviewedChannels[method];
+                      return (
+                        <label
+                          key={method}
+                          className={`flex justify-between items-center px-4 py-2.5 cursor-pointer transition-colors ${
+                            checked ? "bg-emerald-50" : "bg-white/60"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) =>
+                                setReviewedChannels((prev) => ({ ...prev, [method]: e.target.checked }))
+                              }
+                              className="accent-primary"
+                            />
+                            <span className="text-xs font-label-caps text-outline">{method}</span>
+                          </span>
+                          <span className="text-sm font-data-tabular font-bold text-primary">
+                            {formatCurrency(paymentsByMethod[method] as number)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    <div className="flex justify-between items-center px-4 py-2.5 bg-primary/5">
+                      <span className="text-xs font-label-caps text-primary font-bold">TOTAL RECEIVED</span>
+                      <span className="text-sm font-data-tabular font-bold text-primary">
+                        {formatCurrency(Object.values(paymentsByMethod).reduce((sum: number, v) => sum + (v as number), 0))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="bg-primary/5 p-4 rounded-xl mb-6">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-outline font-label-caps">Expected System Balance</span>
+                  <span className="text-xs text-outline font-label-caps">Expected System Balance (Cash Only)</span>
                   <span className="text-lg font-data-tabular font-bold text-primary">{formatCurrency(activeSession.expectedCash)}</span>
                 </div>
               </div>
@@ -442,8 +515,21 @@ export default function Caixa() {
                 )}
 
                 <div className="flex gap-3 mt-4">
-                  <button type="button" onClick={() => setIsClosing(false)} className="flex-1 py-3 bg-surface border border-primary/10 rounded-xl text-primary font-label-caps text-xs">CANCEL</button>
-                  <button type="submit" className="flex-1 py-3 bg-primary text-on-primary rounded-xl font-label-caps text-xs shadow-xl flex items-center justify-center gap-2"><Lock size={14} /> FINALIZE CLOSE</button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsClosing(false); setReviewedChannels({}); }}
+                    className="flex-1 py-3 bg-surface border border-primary/10 rounded-xl text-primary font-label-caps text-xs"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!allChannelsReviewed}
+                    title={!allChannelsReviewed ? "Check off every payment channel above first" : undefined}
+                    className="flex-1 py-3 bg-primary text-on-primary rounded-xl font-label-caps text-xs shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Lock size={14} /> FINALIZE CLOSE
+                  </button>
                 </div>
               </form>
             </motion.div>

@@ -79,6 +79,7 @@ export default defineSchema({
     amountReceived: v.optional(v.number()),
     changeGiven: v.optional(v.number()),
     changeHandling: v.optional(v.string()),
+    debtAddedToAccount: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     customerName: v.optional(v.string()), // Denormalized customer name
     customerTier: v.optional(v.string()), // Denormalized customer tier
@@ -101,6 +102,7 @@ export default defineSchema({
     paymentDate: v.number(), // Timestamp
     status: v.string(), // "Completed", "Pending", "Failed"
     notes: v.optional(v.string()),
+    source: v.optional(v.string()), // "checkout" | "manual" -- manual payments can be individually deleted, checkout tenders cannot
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   }).index("by_transaction", ["transactionId"])

@@ -9,7 +9,7 @@ import {
   MoreVertical,
   ChevronRight,
 } from "lucide-react";
-import { CustomerBalanceBadge } from "./CustomerBalanceBadge";
+import { HEALTH_COLORS } from "./CustomerHealthChart";
 
 interface Customer {
   _id: string;
@@ -130,20 +130,18 @@ export const CustomerTable = ({
         <table className="w-full text-left border-collapse">
           <thead className="sticky top-0 z-10 bg-white/80 backdrop-blur-md">
             <tr className="border-b border-primary/5 font-label-caps text-[11px] text-outline">
-              <th className="px-8 py-5">CLIENT & HEALTH</th>
+              <th className="px-8 py-5">CLIENT</th>
               <th className="px-6 py-5">CONTACTS</th>
               <th className="px-6 py-5">LIFETIME VALUE</th>
-              <th className="px-6 py-5">BALANCE</th>
+              <th className="px-6 py-5">CREDIT</th>
+              <th className="px-6 py-5">DEBIT</th>
               <th className="px-6 py-5">CLASSIFICATION</th>
               <th className="px-8 py-5 text-right">ACTION</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-primary/5">
             {filteredCustomers.map((customer) => {
-              const health = customer.customerHealth || "Growing Client";
-              const scoreVal = customer.customerScore || 0;
-              const tier = customer.financialTier || "Regular";
-              const lvl = customer.loyaltyLevel || "Bronze";
+              const health = customer.customerHealth || "New Client";
               return (
                 <tr
                   key={customer._id}
@@ -160,19 +158,6 @@ export const CustomerTable = ({
                         <p className="font-body-md text-sm font-bold text-on-surface">
                           {customer.firstName} {customer.lastName}
                         </p>
-                        <span
-                          className={`text-[9px] font-bold uppercase tracking-wider ${
-                            health === "Elite Client"
-                              ? "text-purple-600"
-                              : health === "Valuable Client"
-                                ? "text-emerald-600"
-                                : health === "Growing Client"
-                                  ? "text-blue-600"
-                                  : "text-rose-600"
-                          }`}
-                        >
-                          {health} ({scoreVal} pts)
-                        </span>
                       </div>
                     </div>
                   </td>
@@ -201,44 +186,34 @@ export const CustomerTable = ({
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                    <CustomerBalanceBadge
-                      creditBalance={customer.creditBalance}
-                      debitBalance={customer.debitBalance}
-                      formatCurrency={formatCurrency}
-                      variant="compact"
-                    />
+                    {(customer.creditBalance || 0) > 0 ? (
+                      <span className="font-data-tabular text-sm font-bold text-emerald-600">
+                        {formatCurrency(customer.creditBalance || 0)}
+                      </span>
+                    ) : (
+                      <span className="font-data-tabular text-sm text-outline opacity-50">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-5">
-                    <div className="flex flex-col gap-1">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider w-fit ${
-                          tier.toLowerCase() === "platinum"
-                            ? "bg-purple-900/10 text-purple-700 border border-purple-800/20"
-                            : tier.toLowerCase() === "vip"
-                              ? "bg-amber-900/10 text-amber-700 border border-amber-800/20"
-                              : tier.toLowerCase() === "premium"
-                                ? "bg-rose-950/10 text-rose-700 border border-rose-900/20"
-                                : "bg-slate-800/10 text-slate-700 border border-slate-700/20"
-                        }`}
-                      >
-                        {tier}
+                    {(customer.debitBalance || 0) > 0 ? (
+                      <span className="font-data-tabular text-sm font-bold text-error">
+                        {formatCurrency(customer.debitBalance || 0)}
                       </span>
-                      <span className="flex items-center gap-1 text-[9px] font-bold text-outline uppercase tracking-wider">
-                        <Star
-                          size={10}
-                          className={
-                            lvl.toLowerCase() === "diamond"
-                              ? "text-cyan-500 fill-cyan-400"
-                              : lvl.toLowerCase() === "gold"
-                                ? "text-amber-500 fill-amber-400"
-                                : lvl.toLowerCase() === "silver"
-                                  ? "text-slate-400 fill-slate-400"
-                                  : "text-amber-700 fill-amber-700"
-                          }
-                        />
-                        {lvl}
-                      </span>
-                    </div>
+                    ) : (
+                      <span className="font-data-tabular text-sm text-outline opacity-50">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-5">
+                    <span
+                      className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider w-fit border"
+                      style={{
+                        color: HEALTH_COLORS[health],
+                        borderColor: `${HEALTH_COLORS[health]}33`,
+                        backgroundColor: `${HEALTH_COLORS[health]}1a`,
+                      }}
+                    >
+                      {health}
+                    </span>
                   </td>
                   <td className="px-8 py-5 text-right" onClick={(e) => e.stopPropagation()}>
                     <button

@@ -43,6 +43,7 @@ export default function POS() {
   const [cart, setCart] = useState<any[]>([]);
 
   const [changeHandling, setChangeHandling] = useState("Cash");
+  const [addRemainingToAccount, setAddRemainingToAccount] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedCustomer = customers.find((c) => c._id === selectedCustomerId);
@@ -254,6 +255,7 @@ export default function POS() {
         changeHandling: changeGiven > 0 ? changeHandling : undefined,
         deliveryStatus: effectiveSettlement === "Pending" ? "Pending" : "Delivered",
         paymentBreakdown,
+        addRemainingToAccount: remainingAmount > 0 ? addRemainingToAccount : undefined,
       });
 
       toast.success(`Transaction Complete: ${result.receiptNumber}`);
@@ -261,6 +263,7 @@ export default function POS() {
       resetPaymentEntries();
       setSelectedCustomerId(null);
       setCustomerSearch("");
+      setAddRemainingToAccount(false);
     } catch (err: any) {
       console.error("Transaction Error:", err);
       let errorMessage = "Failed to complete transaction.";
@@ -710,6 +713,23 @@ export default function POS() {
                 <span className="font-bold font-label-caps text-xs tracking-wider">Remaining to Pay</span>
                 <span className="font-bold text-error font-data-tabular">{formatCurrency(remainingAmount)}</span>
               </div>
+            )}
+
+            {remainingAmount > 0 && !!selectedCustomerId && (
+              <label className="flex items-start gap-2.5 p-3 bg-primary/5 rounded-xl border border-primary/10 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addRemainingToAccount}
+                  onChange={(e) => setAddRemainingToAccount(e.target.checked)}
+                  className="mt-0.5 accent-primary"
+                />
+                <span className="text-xs text-on-surface">
+                  <span className="font-bold font-label-caps tracking-wider block">Add Remaining Balance to Customer Account</span>
+                  <span className="text-on-surface-variant text-[11px]">
+                    Otherwise this sale stays pending — the customer&apos;s account balance won&apos;t change.
+                  </span>
+                </span>
+              </label>
             )}
 
             {changeGiven > 0 && (

@@ -41,6 +41,7 @@ export default function Sales() {
     discount: 0,
     notes: "",
   });
+  const [addRemainingToAccount, setAddRemainingToAccount] = useState(false);
 
   const selectedCustomer = customers.find((c) => c._id === saleForm.customerId);
   const {
@@ -160,6 +161,7 @@ export default function Sales() {
           price: it.price,
         })),
         notes: saleForm.notes,
+        addRemainingToAccount: totalPaid < saleTotals.total ? addRemainingToAccount : undefined,
       });
 
       const receiptNumber = result.receiptNumber;
@@ -173,6 +175,7 @@ export default function Sales() {
         notes: "",
       });
       resetPaymentEntries();
+      setAddRemainingToAccount(false);
       toast.success(`Transaction Complete: ${receiptNumber}`);
     } catch (error: any) {
       const errorMessage = error.data || error.message || "Failed to process sale";
@@ -308,6 +311,8 @@ export default function Sales() {
             updateAmount={updateAmount}
             addPaymentEntry={addEntry}
             removePaymentEntry={removeEntry}
+            addRemainingToAccount={addRemainingToAccount}
+            setAddRemainingToAccount={setAddRemainingToAccount}
           />
         )}
       </AnimatePresence>

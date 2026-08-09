@@ -1,35 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyLedgerEntry, reconcileBalances } from "./ledgerHelpers";
-
-describe("reconcileBalances", () => {
-  test("positive netAmount with no existing debt adds to credit", () => {
-    expect(reconcileBalances(0, 0, 100)).toEqual({ creditBalance: 100, debitBalance: 0 });
-  });
-
-  test("positive netAmount nets through existing debt first, remainder to credit", () => {
-    expect(reconcileBalances(0, 60, 100)).toEqual({ creditBalance: 40, debitBalance: 0 });
-  });
-
-  test("positive netAmount smaller than existing debt only reduces debt", () => {
-    expect(reconcileBalances(0, 100, 60)).toEqual({ creditBalance: 0, debitBalance: 40 });
-  });
-
-  test("negative netAmount with no existing credit adds to debt", () => {
-    expect(reconcileBalances(0, 0, -100)).toEqual({ creditBalance: 0, debitBalance: 100 });
-  });
-
-  test("negative netAmount nets through existing credit first, remainder to debt", () => {
-    expect(reconcileBalances(60, 0, -100)).toEqual({ creditBalance: 0, debitBalance: 40 });
-  });
-
-  test("negative netAmount smaller than existing credit only reduces credit", () => {
-    expect(reconcileBalances(100, 0, -60)).toEqual({ creditBalance: 40, debitBalance: 0 });
-  });
-
-  test("zero netAmount is a no-op", () => {
-    expect(reconcileBalances(50, 20, 0)).toEqual({ creditBalance: 50, debitBalance: 20 });
-  });
-});
+import { applyLedgerEntry } from "./ledgerHelpers";
 
 describe("applyLedgerEntry", () => {
   const zero = { creditBalance: 0, debitBalance: 0 };
@@ -68,21 +38,31 @@ describe("applyLedgerEntry", () => {
     expect(applyLedgerEntry(zero, { type: "CREDIT", amount: 100 })).toEqual({ creditBalance: 100, debitBalance: 0 });
   });
 
-  test("PAYMENT (real debt-recovery) nets through existing debt", () => {
-    expect(applyLedgerEntry({ creditBalance: 0, debitBalance: 60 }, { type: "PAYMENT", amount: 100 }))
-      .toEqual({ creditBalance: 40, debitBalance: 0 });
-  });
-
-  test("DEBIT nets through existing credit first (confirmed product decision)", () => {
-    expect(applyLedgerEntry({ creditBalance: 500, debitBalance: 0 }, { type: "DEBIT", amount: 200 }))
-      .toEqual({ creditBalance: 300, debitBalance: 0 });
+  test("CREDIT never nets against existing debt (symmetric explicit-only rule)", () => {
+    expect(applyLedgerEntry({ creditBalance: 0, debitBalance: 300 }, { type: "CREDIT", amount: 100 }))
+      .toEqual({ creditBalance: 100, debitBalance: 300 });
   });
 
   test("DEBIT on zero balance adds pure debt", () => {
     expect(applyLedgerEntry(zero, { type: "DEBIT", amount: 200 })).toEqual({ creditBalance: 0, debitBalance: 200 });
   });
 
-  test("sequential fold matches a single reconciled call (associativity sanity check)", () => {
+  test("DEBIT never consumes existing credit (explicit-only rule)", () => {
+    expect(applyLedgerEntry({ creditBalance: 500, debitBalance: 0 }, { type: "DEBIT", amount: 200 }))
+      .toEqual({ creditBalance: 500, debitBalance: 200 });
+  });
+
+  test("PAYMENT (real account-debt recovery) subtracts from debit only, floored at 0", () => {
+    expect(applyLedgerEntry({ creditBalance: 0, debitBalance: 60 }, { type: "PAYMENT", amount: 100 }))
+      .toEqual({ creditBalance: 0, debitBalance: 0 });
+  });
+
+  test("PAYMENT never spills into credit even if it exceeds debit", () => {
+    expect(applyLedgerEntry({ creditBalance: 10, debitBalance: 40 }, { type: "PAYMENT", amount: 100 }))
+      .toEqual({ creditBalance: 10, debitBalance: 0 });
+  });
+
+  test("sequential fold: SALE then exact PAYMENT_LOG leaves balance untouched", () => {
     let balance = zero;
     balance = applyLedgerEntry(balance, { type: "SALE", amount: 800 });
     balance = applyLedgerEntry(balance, { type: "PAYMENT_LOG", amount: 800 });

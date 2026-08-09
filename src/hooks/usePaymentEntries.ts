@@ -38,7 +38,11 @@ export function usePaymentEntries(selectedCustomer: { creditBalance?: number } |
 
   const updateMethod = (id: string, method: string) => {
     setPaymentEntries((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, method, amount: clampStoreCredit(method, p.amount) } : p))
+      prev.map((p) =>
+        p.id === id
+          ? { ...p, method, amount: method === "Store Credit" ? creditBalance.toString() : p.amount }
+          : p
+      )
     );
   };
 

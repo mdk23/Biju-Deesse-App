@@ -1,40 +1,6 @@
 import { mutation, DatabaseWriter } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
-export function reconcileBalances(currentCredit: number, currentDebit: number, netAmount: number) {
-  let creditBalance = currentCredit;
-  let debitBalance = currentDebit;
-
-  if (netAmount > 0) {
-    // Applying credit
-    if (debitBalance > 0) {
-      if (netAmount >= debitBalance) {
-        creditBalance += (netAmount - debitBalance);
-        debitBalance = 0;
-      } else {
-        debitBalance -= netAmount;
-      }
-    } else {
-      creditBalance += netAmount;
-    }
-  } else if (netAmount < 0) {
-    // Applying debt
-    const debt = Math.abs(netAmount);
-    if (creditBalance > 0) {
-      if (debt >= creditBalance) {
-        debitBalance += (debt - creditBalance);
-        creditBalance = 0;
-      } else {
-        creditBalance -= debt;
-      }
-    } else {
-      debitBalance += debt;
-    }
-  }
-
-  return { creditBalance, debitBalance };
-}
-
 export type LedgerEntryType =
   | "CREDIT" | "DEBIT" | "USE_CREDIT" | "PAYMENT" | "PAYMENT_LOG" | "REFUND" | "SALE";
 
@@ -59,11 +25,21 @@ export function applyLedgerEntry(
   if (entry.type === "SALE" || entry.type === "REFUND" || entry.type === "PAYMENT_LOG") {
     return balance; // audit-log-only, never mutates balance
   }
-  // PAYMENT (real debt-recovery), CREDIT (overpayment -> store credit), and
-  // DEBIT (underpayment) all net through reconcileBalances, so new debt
-  // nets through any existing store credit first.
-  const amount = entry.type === "DEBIT" ? -entry.amount : entry.amount;
-  return reconcileBalances(balance.creditBalance, balance.debitBalance, amount);
+  if (entry.type === "CREDIT") {
+    // Overpayment saved as store credit -- pure add. Never nets against any
+    // existing debt: credit and debt only ever move via an explicit action
+    // (Store Credit tender, or a manual payment), never automatically.
+    return { creditBalance: balance.creditBalance + entry.amount, debitBalance: balance.debitBalance };
+  }
+  if (entry.type === "DEBIT") {
+    // Underpayment explicitly added to the customer's account -- pure add.
+    // Never consumes existing credit, symmetric with CREDIT above.
+    return { creditBalance: balance.creditBalance, debitBalance: balance.debitBalance + entry.amount };
+  }
+  // PAYMENT: real account-debt recovery, floored at 0, never spills into
+  // credit. Safe because payments.addPayment caps the amount at the
+  // customer's actual debitBalance server-side before this is ever called.
+  return { creditBalance: balance.creditBalance, debitBalance: Math.max(0, balance.debitBalance - entry.amount) };
 }
 
 export async function applyCustomerLedger(

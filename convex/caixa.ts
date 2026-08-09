@@ -320,6 +320,7 @@ export const getSessionReportDetails = query({
 
     let totalCashReceived = 0;
     let totalElectronicReceived = 0;
+    const paymentsByMethod: Record<string, number> = {};
 
     for (const p of payments) {
       if (p.paymentMethod.toLowerCase() === "cash") {
@@ -327,6 +328,7 @@ export const getSessionReportDetails = query({
       } else {
         totalElectronicReceived += p.amount;
       }
+      paymentsByMethod[p.paymentMethod] = (paymentsByMethod[p.paymentMethod] || 0) + p.amount;
     }
 
     const debtRecoveries = ledgerEntries.filter((l) => l.type === "PAYMENT");
@@ -383,6 +385,7 @@ export const getSessionReportDetails = query({
         variance: session.variance ?? 0,
         totalCashReceived,
         totalElectronicReceived,
+        paymentsByMethod,
         totalCashIn,
         totalCashOut,
         totalDebtRecoveries,

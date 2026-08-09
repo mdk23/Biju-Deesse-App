@@ -50,6 +50,8 @@ interface NewSaleDrawerProps {
   updateAmount: (id: string, amount: string) => void;
   addPaymentEntry: () => void;
   removePaymentEntry: (id: string) => void;
+  addRemainingToAccount: boolean;
+  setAddRemainingToAccount: (v: boolean) => void;
 }
 
 export const NewSaleDrawer = ({
@@ -71,6 +73,8 @@ export const NewSaleDrawer = ({
   updateAmount,
   addPaymentEntry,
   removePaymentEntry,
+  addRemainingToAccount,
+  setAddRemainingToAccount,
 }: NewSaleDrawerProps) => {
   const customers = (useQuery(api.customers.list) || []) as Customer[];
   const products = (useQuery(api.products.list, { archived: false }) || []) as Product[];
@@ -332,6 +336,25 @@ export const NewSaleDrawer = ({
                         </p>
                       </div>
                     </div>
+
+                    {saleTotals.total - totalPaid > 0 && !!saleForm.customerId && (
+                      <label className="flex items-start gap-2.5 p-3 bg-primary/5 rounded-xl border border-primary/10 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={addRemainingToAccount}
+                          onChange={(e) => setAddRemainingToAccount(e.target.checked)}
+                          className="mt-0.5 accent-primary"
+                        />
+                        <span className="text-xs text-on-surface">
+                          <span className="font-bold font-label-caps tracking-wider block">
+                            Add Remaining Balance to Customer Account
+                          </span>
+                          <span className="text-on-surface-variant text-[11px]">
+                            Otherwise this sale stays pending — the customer&apos;s account balance won&apos;t change.
+                          </span>
+                        </span>
+                      </label>
+                    )}
                   </div>
                 </section>
               </motion.div>

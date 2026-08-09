@@ -36,7 +36,7 @@ export default function CaixaReports() {
   const handleExportExcel = () => {
     if (!sessionDetails) return;
 
-    const { session: sess, transactions: txs, payments: pmts, ledgerEntries: ledger, stockMovements: stocks, summary: s } = sessionDetails;
+    const { session: sess, transactions: txs, ledgerEntries: ledger, stockMovements: stocks, summary: s } = sessionDetails;
 
     const formatFullDate = (ts: number) => new Date(ts).toLocaleString('pt-PT');
 
@@ -95,19 +95,13 @@ export default function CaixaReports() {
     ];
 
     // Section 6: Payment Method Breakdown
-    const paymentBreakdownMap: Record<string, number> = {};
-    pmts.forEach((p: any) => {
-      const method = p.paymentMethod || "Desconhecido";
-      paymentBreakdownMap[method] = (paymentBreakdownMap[method] || 0) + p.amount;
-    });
-
     const paymentBreakdownRows: any[][] = [
       [],
       ["DESDOBRAMENTO DE PAGAMENTOS (POR MÉTODO)"],
       ["Método de Pagamento", "Total Recebido"]
     ];
 
-    Object.entries(paymentBreakdownMap).forEach(([method, amount]) => {
+    Object.entries(s.paymentsByMethod || {}).forEach(([method, amount]) => {
       paymentBreakdownRows.push([method, amount]);
     });
 

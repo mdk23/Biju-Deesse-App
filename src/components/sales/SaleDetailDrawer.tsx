@@ -1,6 +1,12 @@
-import React from "react";
-import { motion } from "framer-motion";
-import { X, Printer, Trash2, AlertCircle } from "lucide-react";
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Printer, Trash2, AlertCircle, Wallet, PiggyBank } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import { toast } from "sonner";
+import { api } from "../../../convex/_generated/api";
+import { Id } from "../../../convex/_generated/dataModel";
+import { useAuth } from "../AuthProvider";
+import { RecordPaymentModal } from "./RecordPaymentModal";
 
 interface SaleDetailDrawerProps {
   selectedSale: any;
@@ -15,6 +21,33 @@ export const SaleDetailDrawer = ({
   onRemoveSale,
   formatCurrency,
 }: SaleDetailDrawerProps) => {
+  const { user } = useAuth();
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+  const [isAddingToAccount, setIsAddingToAccount] = useState(false);
+  const addRemainingToCustomerAccount = useMutation(api.transactions.addRemainingToCustomerAccount);
+  const payments = useQuery(
+    api.payments.getForTransaction,
+    selectedSale?._id ? { transactionId: selectedSale._id as Id<"transactions"> } : "skip"
+  );
+
+  const canManagePayment =
+    (user?.role === "admin" || user?.role === "manager") &&
+    selectedSale.customerId &&
+    (selectedSale.balance || 0) > 0;
+  const debtAddedToAccount = !!selectedSale.debtAddedToAccount;
+
+  const handleAddToAccount = async () => {
+    setIsAddingToAccount(true);
+    try {
+      await addRemainingToCustomerAccount({ transactionId: selectedSale._id as Id<"transactions"> });
+      toast.success("Outstanding balance added to the customer's account.");
+    } catch (err: any) {
+      toast.error(err.data || err.message || "Failed to add balance to account");
+    } finally {
+      setIsAddingToAccount(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-end">
       <motion.div
@@ -129,21 +162,6 @@ export const SaleDetailDrawer = ({
                 </span>
               </div>
 
-              {/* Tenders Received */}
-              {selectedSale.paymentBreakdown?.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-outline-variant/30 space-y-2">
-                  <span className="font-label-caps text-[9px] text-outline mb-1 block">TENDERS RECEIVED</span>
-                  {selectedSale.paymentBreakdown.map((p: any, i: number) => (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span className="text-on-surface-variant font-body-md">{p.method}</span>
-                      <span className="font-data-tabular font-bold text-emerald-600">
-                        {formatCurrency(p.amount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               {/* Change Given */}
               {(selectedSale.changeGiven || 0) > 0 && (
                 <div className="flex justify-between text-sm mt-2">
@@ -157,16 +175,78 @@ export const SaleDetailDrawer = ({
               )}
 
               {selectedSale.balance > 0 && (
-                <div className="flex justify-between text-sm bg-error/5 p-3 rounded-xl mt-4 border border-error/10">
-                  <span className="text-error font-bold flex items-center gap-1">
-                    <AlertCircle size={14} /> Outstanding Balance
-                  </span>
-                  <span className="font-data-tabular font-bold text-error">
-                    {formatCurrency(selectedSale.balance)}
-                  </span>
+                <div className="mt-4 p-3 rounded-xl bg-error/5 border border-error/10 space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-error font-bold flex items-center gap-1">
+                      <AlertCircle size={14} /> Outstanding Balance
+                    </span>
+                    <span className="font-data-tabular font-bold text-error">
+                      {formatCurrency(selectedSale.balance)}
+                    </span>
+                  </div>
+                  {canManagePayment && (
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        onClick={() => setIsRecordingPayment(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2 bg-white border border-error/20 text-error rounded-xl font-label-caps text-[10px] hover:bg-error/5 transition-all"
+                      >
+                        <Wallet size={14} /> RECORD PAYMENT
+                      </button>
+                      {!debtAddedToAccount && (
+                        <button
+                          onClick={handleAddToAccount}
+                          disabled={isAddingToAccount}
+                          className="w-full flex items-center justify-center gap-2 py-2 bg-white border border-primary/20 text-primary rounded-xl font-label-caps text-[10px] hover:bg-primary/5 transition-all disabled:opacity-60"
+                        >
+                          <PiggyBank size={14} /> {isAddingToAccount ? "ADDING..." : "ADD TO ACCOUNT"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+          </section>
+
+          {/* Payment History */}
+          <section>
+            <h4 className="font-label-caps text-[11px] text-outline mb-4">PAYMENT HISTORY</h4>
+            {payments === undefined ? (
+              <p className="font-body-md text-xs text-outline">Loading…</p>
+            ) : payments.length === 0 ? (
+              <p className="font-body-md text-xs text-outline">No payments recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-white/60">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead className="bg-white/60">
+                    <tr className="font-label-caps text-[9px] text-outline">
+                      <th className="px-4 py-3">DATE</th>
+                      <th className="px-4 py-3">METHOD</th>
+                      <th className="px-4 py-3">AMOUNT</th>
+                      <th className="px-4 py-3">STATUS</th>
+                      <th className="px-4 py-3">REFERENCE</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/20 bg-white/30">
+                    {[...payments]
+                      .sort((a: any, b: any) => a.paymentDate - b.paymentDate)
+                      .map((p: any) => (
+                        <tr key={p._id}>
+                          <td className="px-4 py-3 font-data-tabular text-xs text-on-surface-variant">
+                            {new Date(p.paymentDate).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 font-body-md text-xs">{p.paymentMethod}</td>
+                          <td className="px-4 py-3 font-data-tabular font-bold text-emerald-600">
+                            {formatCurrency(p.amount)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-on-surface-variant">{p.status}</td>
+                          <td className="px-4 py-3 text-xs text-outline">{p.reference || "—"}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </div>
 
@@ -187,6 +267,20 @@ export const SaleDetailDrawer = ({
           </div>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {isRecordingPayment && (
+          <RecordPaymentModal
+            mode={debtAddedToAccount ? "account" : "sale"}
+            transactionId={selectedSale._id}
+            customerId={selectedSale.customerId}
+            receiptNumber={selectedSale.receiptNumber?.replace("INV-", "ORD-") || selectedSale._id}
+            remaining={selectedSale.balance}
+            onClose={() => setIsRecordingPayment(false)}
+            formatCurrency={formatCurrency}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
