@@ -19,13 +19,13 @@ export default function LoginPage() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
- 
+
   const { signIn } = useSignIn();
   const { signOut } = useClerk();
   const { isSignedIn, isLoaded: isUserLoaded } = useUser();
   const router = useRouter();
   const convex = useConvex();
- 
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -36,7 +36,7 @@ export default function LoginPage() {
       window.location.href = "/";
     }
   }, [mounted, isUserLoaded, isSignedIn, isSubmitting, isRedirecting]);
- 
+
   if (isRedirecting || (mounted && isUserLoaded && isSignedIn && !isSubmitting)) {
     return <LuxuryLoader text="Entering secure portal..." />;
   }
@@ -174,10 +174,24 @@ export default function LoginPage() {
         >
           {/* Branding Header */}
           <div className="text-center mb-5">
-            <span className="font-label-caps text-label-caps text-primary tracking-[0.3em] uppercase opacity-80 block mb-2">
-              Digital Atelier
-            </span>
-
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/bijudeesse-section-1-emblem.svg"
+              alt="Biju Deesse"
+              className="w-40 h-40 mx-auto drop-shadow-md"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/bijudeesse-section-2-wordmark.svg"
+              alt="Biju Deesse"
+              className="h-6 w-auto mx-auto mt-2"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/bijudeesse-section-3-tagline.svg"
+              alt="Est 2024"
+              className="h-4 w-auto mx-auto mt-1"
+            />
           </div>
 
           {/* Login Card */}

@@ -15,7 +15,7 @@ export default function AppShell({ children }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const pathname = usePathname() || '/';
   const { logout, user } = useAuth();
-  
+
   const firstLetter = user?.username?.charAt(0).toUpperCase() || '?';
   const displayName = user?.username || 'User';
 
@@ -23,18 +23,13 @@ export default function AppShell({ children }: AppShellProps) {
     <div className="bg-atelier-gradient min-h-screen text-on-surface font-body-md overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex justify-between items-center px-container-padding h-16 bg-white/40 backdrop-blur-xl shadow-sm border-b border-white/50">
         <div className="flex items-center gap-4 md:gap-8">
-          <button
-            onClick={() => setMobileSidebarOpen(true)}
-            className="lg:hidden material-symbols-outlined text-primary p-2 hover:bg-white/20 rounded-full transition-colors"
-          >
-            menu
-          </button>
-          <span className="font-headline-md text-headline-md font-semibold text-primary tracking-tight">Biju Deesse</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/bijudeesse-section-1-emblem.svg" alt="Biju Deesse" className="h-12 w-auto" />
 
         </div>
 
         <div className="flex items-center gap-4">
-          <div 
+          <div
             className="w-8 h-8 flex items-center justify-center rounded-full bg-primary text-on-primary font-label-caps font-bold cursor-default shadow-sm hover:scale-105 transition-transform"
             title={displayName}
           >

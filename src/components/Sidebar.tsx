@@ -40,9 +40,15 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
         mobileOpen ? 'translate-x-0' : '-translate-x-full'
       } lg:translate-x-0 ${collapsed ? 'w-16' : 'w-64'} flex flex-col`}
     >
-      <div className={`px-6 mb-12 transition-opacity ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
-        <h2 className="font-headline-lg text-headline-lg text-primary tracking-tight">Biju Deesse</h2>
-        <p className="font-label-caps text-[10px] text-outline tracking-widest mt-1">LUXURY ERP SUITE</p>
+      <div className={`mb-12 flex items-center gap-3 transition-all ${collapsed ? 'justify-center px-3' : 'px-6'}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/bijudeesse-section-1-emblem.svg" alt="Biju Deesse" className="w-10 h-10 flex-shrink-0" />
+        {!collapsed && (
+          <div className="min-w-0">
+            <h2 className="font-headline-lg text-headline-lg text-primary tracking-tight truncate">Biju Deesse</h2>
+            <p className="font-label-caps text-[10px] text-outline tracking-widest mt-1 truncate">LUXURY ERP SUITE</p>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 space-y-1">
