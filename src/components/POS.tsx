@@ -19,6 +19,7 @@ import {
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { computeUnitPrice } from "../../convex/pricingShared";
 import { toast } from "sonner";
 import { useAuth } from "./AuthProvider";
 import { motion, AnimatePresence } from "framer-motion";
@@ -90,9 +91,13 @@ export default function POS() {
   const handleAddToCart = (product: any) => {
     const existing = cart.find((i) => i.id === product._id);
     if (existing) {
+      const newQty = existing.quantity + 1;
+      const newPrice = computeUnitPrice(product.sellingPrice, product.pricingTiers || [], newQty);
       setCart(
         cart.map((i) =>
-          i.id === product._id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.id === product._id
+            ? { ...i, quantity: newQty, price: newPrice, discount: Math.min(i.discount || 0, newPrice * newQty) }
+            : i,
         ),
       );
     } else {
@@ -101,7 +106,8 @@ export default function POS() {
         {
           id: product._id,
           name: product.name,
-          price: product.sellingPrice,
+          price: computeUnitPrice(product.sellingPrice, product.pricingTiers || [], 1),
+          regularPrice: product.sellingPrice,
           sku: product.code || "N/A",
           quantity: 1,
           discount: 0,
@@ -530,6 +536,11 @@ export default function POS() {
                   <p className="text-[10px] text-outline uppercase">
                     {item.sku}
                   </p>
+                  {item.regularPrice && item.price < item.regularPrice && (
+                    <p className="text-[10px] font-bold text-emerald-600 mt-0.5">
+                      Quantity Price Applied · Regular: {formatCurrency(item.regularPrice)} · You Save: {formatCurrency(item.regularPrice - item.price)}/unit
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center gap-3">
@@ -539,10 +550,15 @@ export default function POS() {
                             cart.map((i) => {
                               if (i.id === item.id) {
                                 const newQty = Math.max(1, i.quantity - 1);
+                                const original = products.find((p) => p._id === i.id);
+                                const newPrice = original
+                                  ? computeUnitPrice(original.sellingPrice, original.pricingTiers || [], newQty)
+                                  : i.price;
                                 return {
                                   ...i,
                                   quantity: newQty,
-                                  discount: Math.min(i.discount || 0, i.price * newQty),
+                                  price: newPrice,
+                                  discount: Math.min(i.discount || 0, newPrice * newQty),
                                 };
                               }
                               return i;
@@ -557,11 +573,22 @@ export default function POS() {
                       <button
                         onClick={() =>
                           setCart(
-                            cart.map((i) =>
-                              i.id === item.id
-                                ? { ...i, quantity: i.quantity + 1 }
-                                : i,
-                            ),
+                            cart.map((i) => {
+                              if (i.id === item.id) {
+                                const newQty = i.quantity + 1;
+                                const original = products.find((p) => p._id === i.id);
+                                const newPrice = original
+                                  ? computeUnitPrice(original.sellingPrice, original.pricingTiers || [], newQty)
+                                  : i.price;
+                                return {
+                                  ...i,
+                                  quantity: newQty,
+                                  price: newPrice,
+                                  discount: Math.min(i.discount || 0, newPrice * newQty),
+                                };
+                              }
+                              return i;
+                            }),
                           )
                         }
                         className="w-6 h-6 border border-outline-variant/50 rounded flex items-center justify-center text-on-surface-variant hover:bg-white"

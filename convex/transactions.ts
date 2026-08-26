@@ -9,6 +9,8 @@ import { updateDailyMovementStats } from "./utils";
 import { requireUser } from "./authHelpers";
 import { updateInventoryCountersHelper } from "./products";
 import { updateFinancialStats } from "./analyticsHelpers";
+import { getActiveTiersForProduct } from "./pricing";
+import { computeUnitPrice } from "./pricingShared";
 
 async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: number, diffDebt?: number, diffOverdue?: number, diffOverdueAccounts?: number, recoveredDebt?: number, creditUsed?: number }) {
   const now = new Date();
@@ -309,12 +311,19 @@ export const create = mutation({
       }
     }
 
-    // Prepare denormalized items
+    // Prepare denormalized items. Price is recomputed server-side from the
+    // product's active pricing rule (if any) -- the client-sent item.price
+    // is never trusted, so the POS/checkout UI cannot under- or over-charge
+    // by sending a stale or tampered price.
     const denormalizedItems = await Promise.all(args.items.map(async (item) => {
       const product = await ctx.db.get(item.productId);
       if (!product) throw new Error(`Product ${item.productId} not found`);
+      const tiers = await getActiveTiersForProduct(ctx, item.productId);
+      const price = computeUnitPrice(product.sellingPrice, tiers, item.quantity);
       return {
         ...item,
+        price,
+        regularPrice: product.sellingPrice,
         name: product.name,
         photo: product.imageUrl,
       };

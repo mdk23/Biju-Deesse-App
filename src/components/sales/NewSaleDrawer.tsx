@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { CustomerBalanceBadge } from "../customers/CustomerBalanceBadge";
 import { PaymentEntry } from "../../hooks/usePaymentEntries";
+import { computeUnitPrice, PricingTier } from "../../../convex/pricingShared";
 
 interface Product {
   _id: string;
@@ -14,6 +15,7 @@ interface Product {
   stock: number;
   imageUrl?: string;
   category?: string;
+  pricingTiers?: PricingTier[];
 }
 
 interface Customer {
@@ -34,7 +36,7 @@ interface NewSaleDrawerProps {
   lastReceipt: string;
   saleForm: {
     customerId: string | undefined;
-    items: { productId: string; quantity: number; price: number; name: string }[];
+    items: { productId: string; quantity: number; price: number; name: string; regularPrice?: number }[];
     discount: number;
     notes: string;
   };
@@ -184,10 +186,12 @@ export const NewSaleDrawer = ({
                           onClick={() => {
                             const existing = saleForm.items.find((i) => i.productId === p._id);
                             if (existing) {
+                              const newQty = existing.quantity + 1;
+                              const newPrice = computeUnitPrice(p.sellingPrice, p.pricingTiers || [], newQty);
                               setSaleForm({
                                 ...saleForm,
                                 items: saleForm.items.map((i) =>
-                                  i.productId === p._id ? { ...i, quantity: i.quantity + 1 } : i
+                                  i.productId === p._id ? { ...i, quantity: newQty, price: newPrice } : i
                                 ),
                               });
                             } else {
@@ -195,7 +199,13 @@ export const NewSaleDrawer = ({
                                 ...saleForm,
                                 items: [
                                   ...saleForm.items,
-                                  { productId: p._id, name: p.name, quantity: 1, price: p.sellingPrice },
+                                  {
+                                    productId: p._id,
+                                    name: p.name,
+                                    quantity: 1,
+                                    price: computeUnitPrice(p.sellingPrice, p.pricingTiers || [], 1),
+                                    regularPrice: p.sellingPrice,
+                                  },
                                 ],
                               });
                             }
@@ -235,6 +245,11 @@ export const NewSaleDrawer = ({
                               UNIT: {formatCurrency(item.price)}
                             </span>
                           </div>
+                          {item.regularPrice && item.price < item.regularPrice && (
+                            <p className="text-[10px] font-bold text-emerald-600 mt-1">
+                              Quantity Price Applied · Regular: {formatCurrency(item.regularPrice)} · You Save: {formatCurrency(item.regularPrice - item.price)}/unit
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"

@@ -67,8 +67,12 @@ import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { PricingRulesManager } from './inventory/PricingRulesManager';
 
 // No static MOCK_INVENTORY here anymore
+
+const formatCurrency = (val: number) =>
+  new Intl.NumberFormat('en-MZ', { style: 'currency', currency: 'MZN' }).format(val).replace('MZN', 'Mt');
 
 // --- Sub-components ---
 
@@ -174,6 +178,7 @@ export default function Inventory() {
   }, [selectedProductMovements]);
 
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [showPricingRules, setShowPricingRules] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -479,7 +484,19 @@ export default function Inventory() {
         >
           <Download size={16} /> {isExporting ? "EXPORTING..." : "EXPORT TO EXCEL"}
         </button>
+        <button
+          onClick={() => setShowPricingRules(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-white/60 backdrop-blur-md border border-outline-variant text-on-surface-variant rounded-xl font-label-caps text-[11px] hover:bg-surface-variant/50 transition-all"
+        >
+          <Tag size={16} /> PRICING RULES
+        </button>
       </div>
+
+      <AnimatePresence>
+        {showPricingRules && (
+          <PricingRulesManager onClose={() => setShowPricingRules(false)} formatCurrency={formatCurrency} />
+        )}
+      </AnimatePresence>
 
       {activeTab === "catalog" ? (
         <>

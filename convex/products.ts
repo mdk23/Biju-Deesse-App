@@ -87,15 +87,41 @@ export const recomputeInventoryCounters = internalMutation({
   },
 });
 
+// Batches the join lookup so this never scans all pricingRules -- one
+// indexed by_product query per product, run in parallel, mirroring the
+// hydrateTransactions pattern in convex/transactions.ts.
+async function hydrateProductsWithPricing(ctx: any, products: any[]) {
+  const links = await Promise.all(
+    products.map((p) =>
+      ctx.db.query("pricingRuleProducts").withIndex("by_product", (q: any) => q.eq("productId", p._id)).first()
+    )
+  );
+  const ruleIds = Array.from(new Set(links.filter(Boolean).map((l: any) => l.pricingRuleId)));
+  const rules = await Promise.all(ruleIds.map((id) => ctx.db.get(id)));
+  const ruleMap = new Map(rules.filter(Boolean).map((r: any) => [r._id, r]));
+
+  return products.map((product, i) => {
+    const link = links[i];
+    const rule = link ? ruleMap.get(link.pricingRuleId) : null;
+    const active = rule && rule.active ? rule : null;
+    return {
+      ...product,
+      pricingTiers: active ? active.tiers : [],
+      pricingRuleName: active ? active.name : undefined,
+    };
+  });
+}
+
 // Get all products (live subscription ready)
 export const list = query({
   args: { archived: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const archivedStatus = args.archived ?? false;
-    return await ctx.db
+    const products = await ctx.db
       .query("products")
       .withIndex("by_archived", (q) => q.eq("archived", archivedStatus))
       .take(500);
+    return await hydrateProductsWithPricing(ctx, products);
   },
 });
 

@@ -21,6 +21,31 @@ export default defineSchema({
     .index("by_archived", ["archived"])
     .index("by_createdAt", ["createdAt"]),
 
+  // A quantity-price rule: "from this quantity upward, use this price." Tiers are
+  // embedded (always read/written as one unit) -- only the product relationship
+  // needs its own indexed table (see pricingRuleProducts below).
+  pricingRules: defineTable({
+    name: v.string(),
+    tiers: v.array(
+      v.object({
+        quantityThreshold: v.number(), // integer >= 1
+        unitPrice: v.number(), // >= 0
+      })
+    ),
+    active: v.boolean(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  }).index("by_active", ["active"]),
+
+  // Join table: which products a pricing rule applies to. Indexed both ways so
+  // "this product's rule" never scans all rules, and "this rule's products" is
+  // available for the edit form / delete without scanning all links.
+  pricingRuleProducts: defineTable({
+    pricingRuleId: v.id("pricingRules"),
+    productId: v.id("products"),
+  }).index("by_product", ["productId"])
+    .index("by_rule", ["pricingRuleId"]),
+
   customers: defineTable({
     firstName: v.string(),
     lastName: v.string(),
@@ -71,6 +96,7 @@ export default defineSchema({
         productId: v.id("products"),
         quantity: v.number(),
         price: v.number(), // Price at time of sale
+        regularPrice: v.optional(v.number()), // Base sellingPrice at sale time, for historical "You Saved X" display
         name: v.optional(v.string()), // Denormalized product name
         photo: v.optional(v.string()), // Denormalized product image
       })
