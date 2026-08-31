@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { CustomerBalanceBadge } from "../customers/CustomerBalanceBadge";
 import { PaymentEntry } from "../../hooks/usePaymentEntries";
 import { computeUnitPrice, PricingTier } from "../../../convex/pricingShared";
+import { useAuth } from "../AuthProvider";
 
 interface Product {
   _id: string;
@@ -78,6 +79,8 @@ export const NewSaleDrawer = ({
   addRemainingToAccount,
   setAddRemainingToAccount,
 }: NewSaleDrawerProps) => {
+  const { user } = useAuth();
+  const canUsePricingRules = user?.role === "admin" || user?.role === "manager";
   const customers = (useQuery(api.customers.list) || []) as Customer[];
   const products = (useQuery(api.products.list, { archived: false }) || []) as Product[];
   return (
@@ -187,7 +190,7 @@ export const NewSaleDrawer = ({
                             const existing = saleForm.items.find((i) => i.productId === p._id);
                             if (existing) {
                               const newQty = existing.quantity + 1;
-                              const newPrice = computeUnitPrice(p.sellingPrice, p.pricingTiers || [], newQty);
+                              const newPrice = computeUnitPrice(p.sellingPrice, canUsePricingRules ? p.pricingTiers || [] : [], newQty);
                               setSaleForm({
                                 ...saleForm,
                                 items: saleForm.items.map((i) =>
@@ -203,7 +206,7 @@ export const NewSaleDrawer = ({
                                     productId: p._id,
                                     name: p.name,
                                     quantity: 1,
-                                    price: computeUnitPrice(p.sellingPrice, p.pricingTiers || [], 1),
+                                    price: computeUnitPrice(p.sellingPrice, canUsePricingRules ? p.pricingTiers || [] : [], 1),
                                     regularPrice: p.sellingPrice,
                                   },
                                 ],

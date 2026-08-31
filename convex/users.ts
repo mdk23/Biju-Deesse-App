@@ -188,6 +188,38 @@ export const toggleBlockUser = mutation({
 export const resetPassword = mutation({
   args: { userId: v.id("users"), newPassword: v.string() },
   handler: async (ctx, args) => {
+    if (args.newPassword.length < 3) {
+      throw new Error("Password must be at least 3 characters");
+    }
+
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated. Please log in first.");
+    }
+
+    const performer = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!performer) throw new Error("Performer user record not found in database.");
+
+    // Self-service password change is always allowed, regardless of role.
+    if (performer._id !== args.userId) {
+      const target = await ctx.db.get(args.userId);
+      if (!target) throw new Error("Target user not found");
+
+      if (performer.role === "manager" && target.role !== "POS") {
+        throw new Error("Managers can only reset POS users' passwords");
+      }
+      if (performer.role !== "admin" && performer.role !== "manager") {
+        throw new Error("Unauthorized to reset other users' passwords");
+      }
+      if (target.role === "admin") {
+        throw new Error("Admins' passwords cannot be reset by others");
+      }
+    }
+
     await ctx.db.patch(args.userId, { passwordHash: args.newPassword });
   },
 });

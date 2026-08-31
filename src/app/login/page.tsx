@@ -144,8 +144,8 @@ export default function LoginPage() {
         }
       } else {
         toast.error(errMsg || "Invalid credentials");
+        console.error(err);
       }
-      console.error(err);
     } finally {
       setIsSubmitting(false);
     }

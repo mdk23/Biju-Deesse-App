@@ -34,6 +34,12 @@ export default function POS() {
 
   const createTransaction = useMutation(api.transactions.create);
 
+  // Quantity-based pricing rules only apply for admin/manager sales -- POS
+  // cashiers always sell at the regular price. This mirrors the same gate
+  // enforced server-side in transactions.create, so the cart total a POS
+  // cashier sees can never diverge from what actually gets charged.
+  const canUsePricingRules = user?.role === "admin" || user?.role === "manager";
+
   const [activeCategory, setActiveCategory] = useState("Earrings");
   const [productSearch, setProductSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(
@@ -92,7 +98,7 @@ export default function POS() {
     const existing = cart.find((i) => i.id === product._id);
     if (existing) {
       const newQty = existing.quantity + 1;
-      const newPrice = computeUnitPrice(product.sellingPrice, product.pricingTiers || [], newQty);
+      const newPrice = computeUnitPrice(product.sellingPrice, canUsePricingRules ? product.pricingTiers || [] : [], newQty);
       setCart(
         cart.map((i) =>
           i.id === product._id
@@ -106,7 +112,7 @@ export default function POS() {
         {
           id: product._id,
           name: product.name,
-          price: computeUnitPrice(product.sellingPrice, product.pricingTiers || [], 1),
+          price: computeUnitPrice(product.sellingPrice, canUsePricingRules ? product.pricingTiers || [] : [], 1),
           regularPrice: product.sellingPrice,
           sku: product.code || "N/A",
           quantity: 1,
@@ -552,7 +558,7 @@ export default function POS() {
                                 const newQty = Math.max(1, i.quantity - 1);
                                 const original = products.find((p) => p._id === i.id);
                                 const newPrice = original
-                                  ? computeUnitPrice(original.sellingPrice, original.pricingTiers || [], newQty)
+                                  ? computeUnitPrice(original.sellingPrice, canUsePricingRules ? original.pricingTiers || [] : [], newQty)
                                   : i.price;
                                 return {
                                   ...i,
@@ -578,7 +584,7 @@ export default function POS() {
                                 const newQty = i.quantity + 1;
                                 const original = products.find((p) => p._id === i.id);
                                 const newPrice = original
-                                  ? computeUnitPrice(original.sellingPrice, original.pricingTiers || [], newQty)
+                                  ? computeUnitPrice(original.sellingPrice, canUsePricingRules ? original.pricingTiers || [] : [], newQty)
                                   : i.price;
                                 return {
                                   ...i,

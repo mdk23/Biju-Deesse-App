@@ -314,11 +314,15 @@ export const create = mutation({
     // Prepare denormalized items. Price is recomputed server-side from the
     // product's active pricing rule (if any) -- the client-sent item.price
     // is never trusted, so the POS/checkout UI cannot under- or over-charge
-    // by sending a stale or tampered price.
+    // by sending a stale or tampered price. Quantity-based pricing rules only
+    // apply when an admin or manager is the one making the sale -- POS
+    // cashiers always sell at the regular sellingPrice, regardless of
+    // quantity or any active rule.
+    const canUsePricingRules = user.role === "admin" || user.role === "manager";
     const denormalizedItems = await Promise.all(args.items.map(async (item) => {
       const product = await ctx.db.get(item.productId);
       if (!product) throw new Error(`Product ${item.productId} not found`);
-      const tiers = await getActiveTiersForProduct(ctx, item.productId);
+      const tiers = canUsePricingRules ? await getActiveTiersForProduct(ctx, item.productId) : [];
       const price = computeUnitPrice(product.sellingPrice, tiers, item.quantity);
       return {
         ...item,
