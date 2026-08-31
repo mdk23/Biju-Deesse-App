@@ -83,6 +83,7 @@ export const NewSaleDrawer = ({
   const canUsePricingRules = user?.role === "admin" || user?.role === "manager";
   const customers = (useQuery(api.customers.list) || []) as Customer[];
   const products = (useQuery(api.products.list, { archived: false }) || []) as Product[];
+  const discountStatus = useQuery(api.appSettings.getDiscountStatus);
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-end">
       <motion.div
@@ -278,11 +279,25 @@ export const NewSaleDrawer = ({
                       <span className="text-outline">DISCOUNT (Mt)</span>
                       <input
                         type="number"
+                        min="0"
+                        max={discountStatus?.remaining}
                         value={saleForm.discount}
-                        onChange={(e) => setSaleForm({ ...saleForm, discount: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          const capped = discountStatus !== undefined ? Math.min(val, discountStatus.remaining) : val;
+                          setSaleForm({ ...saleForm, discount: Math.max(0, capped) });
+                        }}
                         className="w-24 text-right bg-transparent border-b border-primary/20 font-data-tabular font-bold focus:border-primary outline-none"
                       />
                     </div>
+                    {discountStatus !== undefined && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-outline/70">DAILY DISCOUNT REMAINING</span>
+                        <span className={`font-data-tabular font-bold ${discountStatus.remaining - saleForm.discount <= 0 ? "text-error" : "text-primary"}`}>
+                          {formatCurrency(Math.max(0, discountStatus.remaining - saleForm.discount))} / {formatCurrency(discountStatus.limit)}
+                        </span>
+                      </div>
+                    )}
                     <div className="pt-4 border-t border-primary/20 flex justify-between">
                       <span className="font-headline-sm text-primary text-xl">GRANDE TOTAL</span>
                       <span className="font-headline-sm text-primary text-2xl">{formatCurrency(saleTotals.total)}</span>

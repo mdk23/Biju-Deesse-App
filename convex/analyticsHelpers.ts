@@ -22,6 +22,7 @@ export async function updateFinancialStats(ctx: any, args: {
   creditIssuedDelta?: number;
   creditRedeemedDelta?: number;
   debtCreatedDelta?: number;
+  discountDelta?: number;
 }) {
   const {
     dateStr,
@@ -45,6 +46,7 @@ export async function updateFinancialStats(ctx: any, args: {
     creditIssuedDelta = 0,
     creditRedeemedDelta = 0,
     debtCreatedDelta = 0,
+    discountDelta = 0,
   } = args;
 
   // 1. Update dailyStats
@@ -88,6 +90,7 @@ export async function updateFinancialStats(ctx: any, args: {
       creditRedeemedToday: Math.max(0, (dailyStat.creditRedeemedToday || 0) + creditRedeemedDelta),
       debtCreatedToday: Math.max(0, (dailyStat.debtCreatedToday || 0) + debtCreatedDelta),
       debtRecoveredToday: Math.max(0, (dailyStat.debtRecoveredToday || 0) + debtRecoveredDelta),
+      discountGiven: Math.max(0, (dailyStat.discountGiven || 0) + discountDelta),
     });
   } else {
     const paymentsByMethod: Record<string, number> = {};
@@ -120,6 +123,7 @@ export async function updateFinancialStats(ctx: any, args: {
       creditRedeemedToday: Math.max(0, creditRedeemedDelta),
       debtCreatedToday: Math.max(0, debtCreatedDelta),
       debtRecoveredToday: Math.max(0, debtRecoveredDelta),
+      discountGiven: Math.max(0, discountDelta),
     });
   }
 

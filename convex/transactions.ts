@@ -11,6 +11,7 @@ import { updateInventoryCountersHelper } from "./products";
 import { updateFinancialStats } from "./analyticsHelpers";
 import { getActiveTiersForProduct } from "./pricing";
 import { computeUnitPrice } from "./pricingShared";
+import { getDailyDiscountLimitInternal } from "./appSettings";
 
 async function updateFinancialCountersHelper(ctx: any, args: { diffCredit?: number, diffDebt?: number, diffOverdue?: number, diffOverdueAccounts?: number, recoveredDebt?: number, creditUsed?: number }) {
   const now = new Date();
@@ -235,6 +236,22 @@ export const create = mutation({
     const cashPayment = args.paymentBreakdown.find(p => p.method.toLowerCase() === "cash");
     if (cashPayment && cashPayment.amount > 0) {
       await validateCaixaForCash(ctx.db, now);
+    }
+
+    // 0b. Store-wide daily discount limit -- applies to every role. This is
+    // the authoritative check; the POS UI mirrors the same remaining-amount
+    // math for display and to pre-clamp discount inputs, but this is what
+    // actually blocks checkout. Reuses `existingStat` (already fetched above
+    // for the receipt sequence number) instead of re-querying dailyStats.
+    if (args.discount > 0) {
+      const dailyDiscountLimit = await getDailyDiscountLimitInternal(ctx);
+      const discountUsedToday = existingStat?.discountGiven || 0;
+      const discountRemaining = Math.max(0, dailyDiscountLimit - discountUsedToday);
+      if (args.discount > discountRemaining) {
+        throw new Error(
+          `Daily discount limit reached. Remaining today: Mt ${discountRemaining.toFixed(2)}, requested: Mt ${args.discount.toFixed(2)}.`
+        );
+      }
     }
 
     // 1. Determine Status & Validate Settlement
@@ -580,6 +597,7 @@ export const create = mutation({
       creditRedeemedDelta: creditRedeemedToday,
       debtCreatedDelta: debtCreatedToday,
       debtRecoveredDelta: debtRecoveredToday,
+      discountDelta: args.discount,
     });
 
     // 9. Update Cashier Counters
@@ -957,6 +975,7 @@ export const remove = mutation({
       inventoryRetailSoldDelta: -inventoryRetailSold,
       cashSalesDelta: -cashSales,
       refundDelta: transaction.total,
+      discountDelta: -(transaction.discount || 0),
     });
 
     // Revert Cashier Counters

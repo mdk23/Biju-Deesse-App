@@ -31,6 +31,7 @@ export default function POS() {
   const products = useQuery(api.products.list, { archived: false }) || [];
   const customers = useQuery(api.customers.list) || [];
   const activeSession = useQuery(api.caixa.getActiveSession);
+  const discountStatus = useQuery(api.appSettings.getDiscountStatus);
 
   const createTransaction = useMutation(api.transactions.create);
 
@@ -144,6 +145,14 @@ export default function POS() {
     return { subtotal, discount, total, profit };
   }, [cart]);
 
+  // How much more discount can still be given today, store-wide, after
+  // accounting for what's already entered in this not-yet-submitted cart.
+  // `discountStatus.remaining` reflects only completed/submitted sales;
+  // transactions.create enforces the real cap server-side at checkout.
+  const discountAvailable = discountStatus
+    ? Math.max(0, discountStatus.remaining - saleTotals.discount)
+    : undefined;
+
   // Auto-derived settlement state
   const settlementType = useMemo(() => {
     if (amountReceived > 0 && amountReceived >= saleTotals.total) return "Completed";
@@ -186,6 +195,15 @@ export default function POS() {
         );
         return;
       }
+    }
+
+    // Daily discount limit -- server re-validates authoritatively in
+    // transactions.create; this is just an early, friendlier error.
+    if (discountStatus !== undefined && saleTotals.discount > discountStatus.remaining) {
+      toast.error(
+        `Daily discount limit reached. Remaining today: ${formatCurrency(discountStatus.remaining)}, this sale uses ${formatCurrency(saleTotals.discount)}.`,
+      );
+      return;
     }
 
     // Unregistered client (Walk-in): Must receive full payment
@@ -608,12 +626,31 @@ export default function POS() {
                         <input
                           type="number"
                           min="0"
-                          max={item.price * item.quantity}
+                          max={(() => {
+                            const otherItemsDiscount = cart
+                              .filter((i) => i.id !== item.id)
+                              .reduce((sum, i) => sum + (i.discount || 0), 0);
+                            const dailyCap =
+                              discountStatus !== undefined
+                                ? Math.max(0, discountStatus.remaining - otherItemsDiscount)
+                                : Infinity;
+                            return Math.min(item.price * item.quantity, dailyCap);
+                          })()}
                           value={item.discount || ""}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
-                            const maxDisc = item.price * item.quantity;
+                            const otherItemsDiscount = cart
+                              .filter((i) => i.id !== item.id)
+                              .reduce((sum, i) => sum + (i.discount || 0), 0);
+                            const dailyCap =
+                              discountStatus !== undefined
+                                ? Math.max(0, discountStatus.remaining - otherItemsDiscount)
+                                : Infinity;
+                            const maxDisc = Math.min(item.price * item.quantity, dailyCap);
                             const clampedVal = Math.min(Math.max(0, val), maxDisc);
+                            if (val > maxDisc && dailyCap < item.price * item.quantity) {
+                              toast.error(`Daily discount limit reached. Only Mt ${dailyCap.toFixed(2)} left today.`);
+                            }
                             setCart(
                               cart.map((i) =>
                                 i.id === item.id ? { ...i, discount: clampedVal } : i
@@ -728,6 +765,19 @@ export default function POS() {
                 )}
               </div>
             </div>
+
+            {discountStatus !== undefined && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-on-surface-variant">Daily Discount Remaining</span>
+                <span
+                  className={`font-bold font-data-tabular ${
+                    discountAvailable === 0 ? "text-error" : "text-primary"
+                  }`}
+                >
+                  {formatCurrency(discountAvailable ?? 0)} / {formatCurrency(discountStatus.limit)}
+                </span>
+              </div>
+            )}
 
             <div className="flex justify-between items-center text-xs">
               <span className="text-on-surface-variant">Invoice Total</span>

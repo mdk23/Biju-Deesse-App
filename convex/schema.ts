@@ -303,7 +303,13 @@ export default defineSchema({
     cashOut: v.optional(v.number()),
     inventoryCostSold: v.optional(v.number()),
     inventoryRetailSold: v.optional(v.number()),
+    discountGiven: v.optional(v.number()), // Store-wide manual discount total for this calendar day, counted against dailyDiscountLimit
   }).index("by_date", ["date"]),
+
+  appSettings: defineTable({
+    id: v.string(), // singleton key, e.g. "main"
+    dailyDiscountLimit: v.number(), // Mt cap on total manual discount across all sales, store-wide, per calendar day
+  }).index("by_setting_id", ["id"]),
 
   globalCounters: defineTable({
     id: v.string(), // e.g. "main"

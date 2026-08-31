@@ -8,15 +8,16 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import { KeyRound, UserPlus, Users, Save, Loader2, Shield, Key, Eye, EyeOff } from "lucide-react";
+import { KeyRound, UserPlus, Users, Save, Loader2, Shield, Key, Eye, EyeOff, Percent } from "lucide-react";
 
 export default function Settings() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "users">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "users" | "store">("profile");
 
   if (!user) return null;
 
   const canManageUsers = user.role === "admin" || user.role === "manager";
+  const isAdmin = user.role === "admin";
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -54,6 +55,20 @@ export default function Settings() {
             </button>
           )}
 
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab("store")}
+              className={`w-full text-left px-4 py-3 rounded-lg font-label-caps text-label-caps transition-all flex items-center gap-3 ${
+                activeTab === "store"
+                  ? "bg-primary text-on-primary shadow-md"
+                  : "text-on-surface-variant hover:bg-white/30"
+              }`}
+            >
+              <Percent className="w-4 h-4" />
+              Store Settings
+            </button>
+          )}
+
           <div className="pt-4 mt-4 border-t border-outline-variant/50">
             <button
               onClick={logout}
@@ -68,6 +83,7 @@ export default function Settings() {
         <div className="flex-1 glass-panel p-8 rounded-2xl min-h-[500px]">
           {activeTab === "profile" && <ProfileSection />}
           {activeTab === "users" && canManageUsers && <UserManagementSection />}
+          {activeTab === "store" && isAdmin && <StoreSettingsSection />}
         </div>
       </div>
     </div>
@@ -520,6 +536,93 @@ function UserManagementSection() {
           </motion.div>
         )}
       </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function StoreSettingsSection() {
+  const currentLimit = useQuery(api.appSettings.getDailyDiscountLimit);
+  const discountStatus = useQuery(api.appSettings.getDiscountStatus);
+  const setDailyDiscountLimit = useMutation(api.appSettings.setDailyDiscountLimit);
+
+  const [limitInput, setLimitInput] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const displayValue = limitInput !== "" ? limitInput : (currentLimit ?? "");
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(limitInput || String(currentLimit ?? ""));
+    if (isNaN(parsed) || parsed < 0) {
+      toast.error("Enter a valid, non-negative amount");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await setDailyDiscountLimit({ limit: parsed });
+      toast.success(`Daily discount limit set to Mt ${parsed.toLocaleString()}`);
+      setLimitInput("");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update daily discount limit");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <h2 className="font-headline-sm text-headline-sm text-primary mb-6 flex items-center gap-2">
+        <Percent className="w-5 h-5" /> Daily Discount Limit
+      </h2>
+      <p className="text-sm text-on-surface-variant mb-6 max-w-md">
+        Caps the total manual discount that can be given across every sale, by every
+        cashier, per calendar day. Once reached, no more discount can be applied at
+        checkout until the limit resets the next day.
+      </p>
+
+      {discountStatus && (
+        <div className="mb-8 p-4 bg-white/30 rounded-lg border border-white/50 max-w-md">
+          <p className="text-sm text-on-surface-variant mb-1">Used Today</p>
+          <p className="font-bold text-on-surface">
+            Mt {discountStatus.used.toLocaleString()} / Mt {discountStatus.limit.toLocaleString()}
+            <span className="ml-2 inline-block px-2 py-0.5 rounded text-[10px] font-label-caps bg-primary/10 text-primary">
+              Mt {discountStatus.remaining.toLocaleString()} remaining
+            </span>
+          </p>
+        </div>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-6 max-w-md">
+        <div>
+          <label className="block font-label-caps text-label-caps text-on-surface-variant mb-2">
+            Daily Limit (Mt)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            className="w-full bg-transparent border-0 border-b border-outline-variant py-2 px-0 focus:ring-0 focus:border-primary transition-colors outline-none"
+            value={displayValue}
+            onChange={(e) => setLimitInput(e.target.value)}
+            disabled={isSubmitting || currentLimit === undefined}
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSubmitting || currentLimit === undefined}
+          className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full font-label-caps text-label-caps hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Limit
+        </button>
+      </form>
     </motion.div>
   );
 }
