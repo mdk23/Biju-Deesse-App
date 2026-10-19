@@ -227,6 +227,39 @@ export default function CaixaReports() {
 
   const reports = useQuery(api.caixa.getCaixaReports, filterParams) || [];
 
+  const handleExportCsv = () => {
+    if (reports.length === 0) return;
+
+    const formatFullDate = (ts: number) => new Date(ts).toLocaleString('pt-PT');
+
+    const rows: any[][] = [
+      ["Opened At", "Closed At", "User", "Status", "Opening", "Cash Sales", "Cash In", "Cash Out", "Expected", "Counted", "Variance", "Closing Note"]
+    ];
+
+    reports.forEach((r) => {
+      rows.push([
+        formatFullDate(r.openedAt),
+        r.closedAt ? formatFullDate(r.closedAt) : "",
+        r.openedBy,
+        r.status,
+        r.openingAmount,
+        r.totalCashSales,
+        r.totalCashIn,
+        r.totalCashOut,
+        r.expectedCash,
+        r.countedCash ?? "",
+        r.variance ?? "",
+        r.closingNote || ""
+      ]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Caixa Reports");
+
+    const dateFileStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Caixa_Reports_${dateRange}_${dateFileStr}.csv`, { bookType: 'csv' });
+  };
+
   const kpis = useMemo(() => {
     let totalCashSales = 0;
     let totalCashIn = 0;
@@ -290,7 +323,11 @@ export default function CaixaReports() {
               <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="px-4 py-3 rounded-2xl text-xs bg-white/60 border border-primary/10 outline-none shadow-sm" />
             </>
           )}
-          <button className="px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl hover:bg-primary/90 transition-all flex items-center gap-2">
+          <button
+            onClick={handleExportCsv}
+            disabled={reports.length === 0}
+            className="px-6 py-3 bg-primary text-on-primary rounded-2xl font-label-caps text-[11px] shadow-xl hover:bg-primary/90 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Download size={16} /> EXPORT CSV
           </button>
         </div>

@@ -130,9 +130,6 @@ export default function Inventory() {
         sellingPrice: p.sellingPrice,
         stock: p.stock,
         reorderLevel: p.reorderLevel,
-        archived: p.archived,
-        description: p.description ?? "",
-        imageUrl: p.imageUrl ?? "",
       }));
 
       const ws = XLSX.utils.json_to_sheet(rows);
