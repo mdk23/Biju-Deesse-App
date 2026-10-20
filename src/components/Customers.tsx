@@ -16,9 +16,10 @@ import {
   Info,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 import { KPICard } from "./ui/KPICard";
 import { InsightsPanel } from "./customers/InsightsPanel";
@@ -54,6 +55,96 @@ export default function Customers() {
   const customers = (useQuery(api.customers.list) || []) as Customer[];
   const upsertCustomer = useMutation(api.customers.upsert);
   const deleteCustomer = useMutation(api.customers.remove);
+  const convex = useConvex();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCustomers = async () => {
+    setIsExporting(true);
+    try {
+      const allCustomers = await convex.query(api.customers.listAllForExport, {});
+      if (!allCustomers || allCustomers.length === 0) {
+        toast.error("No clients to export");
+        return;
+      }
+
+      const formatFullDate = (ts?: number) => (ts ? new Date(ts).toLocaleString("pt-PT") : "");
+
+      // Sheet 1: one row per client
+      const clientRows = allCustomers.map((c) => ({
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phone1: c.phone1,
+        phone2: c.phone2 ?? "",
+        phone3: c.phone3 ?? "",
+        email: c.email ?? "",
+        customerType: c.customerType ?? "",
+        financialTier: c.financialTier ?? "",
+        loyaltyLevel: c.loyaltyLevel ?? "",
+        creditStatus: c.creditStatus ?? "",
+        customerHealth: c.customerHealth ?? "",
+        customerScore: c.customerScore ?? "",
+        totalSpent: c.totalSpent,
+        creditBalance: c.creditBalance ?? 0,
+        debitBalance: c.debitBalance ?? 0,
+        orderCount: c.orderCount ?? c.sales.length,
+        lastPurchaseDate: formatFullDate(c.lastPurchaseDate),
+        createdAt: formatFullDate(c.createdAt ?? c._creationTime),
+        notes: c.notes ?? "",
+      }));
+
+      // Sheet 2: one row per sale, Sheet 3: one row per item sold
+      const saleRows: Record<string, unknown>[] = [];
+      const itemRows: Record<string, unknown>[] = [];
+      allCustomers.forEach((c) => {
+        const clientName = `${c.firstName} ${c.lastName}`.trim();
+        c.sales
+          .sort((a, b) => (b.createdAt ?? b._creationTime) - (a.createdAt ?? a._creationTime))
+          .forEach((t) => {
+            const receipt = t.receiptNumber || t._id;
+            const date = formatFullDate(t.createdAt ?? t._creationTime);
+            saleRows.push({
+              client: clientName,
+              phone: c.phone1,
+              receipt,
+              date,
+              items: t.items.reduce((sum, i) => sum + i.quantity, 0),
+              subtotal: t.subtotal,
+              discount: t.discount,
+              total: t.total,
+              refundedAmount: t.refundedAmount,
+              status: t.status,
+              settlementType: t.settlementType,
+              paymentMethods: t.paymentBreakdown.map((p) => `${p.method}: ${p.amount}`).join(", "),
+              cashier: t.cashierName,
+              notes: t.notes ?? "",
+            });
+            t.items.forEach((i) => {
+              itemRows.push({
+                client: clientName,
+                receipt,
+                date,
+                product: i.name ?? "",
+                quantity: i.quantity,
+                unitPrice: i.price,
+                total: i.quantity * i.price,
+              });
+            });
+          });
+      });
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(clientRows), "Clients");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(saleRows), "Sales");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), "Items Sold");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Clients_Export_${dateStr}.xlsx`);
+      toast.success(`Exported ${allCustomers.length} clients and ${saleRows.length} sales`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to export clients");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
@@ -319,8 +410,13 @@ export default function Customers() {
           >
             <UserPlus size={16} /> ADD CLIENT
           </button>
-          <button className="p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-primary/5 transition-all shadow-sm">
-            <Download size={20} />
+          <button
+            onClick={handleExportCustomers}
+            disabled={isExporting}
+            title="Export clients and sales to Excel"
+            className="p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-2xl text-primary hover:bg-primary/5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-wait"
+          >
+            <Download size={20} className={isExporting ? "animate-pulse" : ""} />
           </button>
         </div>
       </div>

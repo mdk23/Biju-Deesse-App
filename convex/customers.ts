@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { recomputeCustomerIntelligence } from "./intelligence";
+import { requireUser } from "./authHelpers";
 
 export const list = query({
   handler: async (ctx) => {
@@ -93,5 +94,24 @@ export const getTopSpenders = query({
       .withIndex("by_totalSpent")
       .order("desc")
       .take(args.limit);
+  },
+});
+
+// Get every customer with their related sales for a full data export
+export const listAllForExport = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx.db, ctx);
+
+    const customers = await ctx.db.query("customers").collect();
+    return await Promise.all(
+      customers.map(async (customer) => {
+        const sales = await ctx.db
+          .query("transactions")
+          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .collect();
+        return { ...customer, sales };
+      })
+    );
   },
 });
